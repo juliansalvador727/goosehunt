@@ -327,7 +327,7 @@ async def run_scrape(ctx, page) -> None:
             scraped += 1
 
         if i < len(todo):
-            delay = random.uniform(1.5, 3.5)
+            delay = random.uniform(0.8, 1.2)
             print(f"[SCRAPE]   sleeping {delay:.1f}s...")
             await asyncio.sleep(delay)
 

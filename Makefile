@@ -3,8 +3,8 @@
 PYTHON := .venv/bin/python
 
 install:
-	python -m venv .venv
-	.venv/bin/pip install -r requirements.txt
+	uv venv
+	uv pip install -r requirements.txt
 	.venv/bin/playwright install chromium
 
 scrape:

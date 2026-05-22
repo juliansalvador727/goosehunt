@@ -118,6 +118,7 @@
       font-size: 12px;
       min-width: 48px;
     }
+    td.score.pay { min-width: 56px; }
     td.openings { text-align: center; color: #64748b; }
     td.job-id   { font-family: monospace; font-size: 11px; color: #94a3b8; white-space: nowrap; }
 
@@ -170,6 +171,21 @@
     <input type="number" x-model.number="threshold" @change="applyFilters()" step="0.05" min="0" max="1">
   </div>
 
+  <div class="role-filters">
+    <div class="role-chip" :class="{ active: applyFilter_email }">
+      <label>
+        <input type="checkbox" x-model="applyFilter_email" @change="applyFilters()">
+        Email
+      </label>
+    </div>
+    <div class="role-chip" :class="{ active: applyFilter_link }">
+      <label>
+        <input type="checkbox" x-model="applyFilter_link" @change="applyFilters()">
+        Ext. link
+      </label>
+    </div>
+  </div>
+
   <span class="count" x-text="postings.length ? `${filtered.length} / ${postings.length}` : 'loading…'"></span>
 </div>
 
@@ -201,6 +217,9 @@
             <span class="sort-icon" :class="{on: sortCol==='score_'+r}" x-text="arrow('score_'+r)"></span>
           </th>
         </template>
+        <th @click="sort('comp_score')" :class="{sorted: sortCol==='comp_score'}">
+          Pay <span class="sort-icon" :class="{on: sortCol==='comp_score'}" x-text="arrow('comp_score')"></span>
+        </th>
         <th @click="sort('openings')" :class="{sorted: sortCol==='openings'}">
           # <span class="sort-icon" :class="{on: sortCol==='openings'}" x-text="arrow('openings')"></span>
         </th>
@@ -227,6 +246,7 @@
           <template x-for="r in roleList" :key="r">
             <td class="score" :style="scoreStyle(p['score_' + r])" x-text="fmtScore(p['score_' + r])"></td>
           </template>
+          <td class="score pay" :style="scoreStyle(p.comp_score)" x-text="fmtPay(p.comp_hourly)" :title="p.comp_hourly != null ? 'est. $' + p.comp_hourly.toFixed(2) + '/hr' : 'not listed'"></td>
           <td class="openings" x-text="p.openings ?? '—'"></td>
           <td class="job-id"   x-text="p.job_id"></td>
         </tr>
@@ -235,6 +255,19 @@
         <tr class="detail-row" x-show="expanded === p.job_id">
           <td colspan="14">
             <div class="detail-panel">
+              <template x-if="p.apply_email || p.apply_link">
+                <div class="detail-section">
+                  <div class="detail-label">Apply</div>
+                  <div class="detail-text">
+                    <template x-if="p.apply_email">
+                      <a :href="'mailto:' + p.apply_email" x-text="p.apply_email" style="color:#1d4ed8"></a>
+                    </template>
+                    <template x-if="p.apply_link">
+                      <a :href="p.apply_link" x-text="p.apply_link" target="_blank" rel="noopener" style="color:#1d4ed8; word-break:break-all"></a>
+                    </template>
+                  </div>
+                </div>
+              </template>
               <template x-if="p.summary">
                 <div class="detail-section">
                   <div class="detail-label">Summary</div>
@@ -274,6 +307,8 @@ function app() {
     expanded: null,
     roleList: ['firmware','embedded','hardware','software','fde','mts','power_electronics'],
     roles: { firmware:false, embedded:false, hardware:false, software:false, fde:false, mts:false, power_electronics:false },
+    applyFilter_email: false,
+    applyFilter_link: false,
 
     async init() {
       const res = await fetch('/api/postings');
@@ -297,6 +332,13 @@ function app() {
       if (active.length) {
         const t = this.threshold;
         rows = rows.filter(p => active.some(r => (p['score_' + r] ?? 0) >= t));
+      }
+
+      if (this.applyFilter_email || this.applyFilter_link) {
+        rows = rows.filter(p =>
+          (this.applyFilter_email && p.apply_method === 'email') ||
+          (this.applyFilter_link  && p.apply_method === 'link')
+        );
       }
 
       const col = this.sortCol, dir = this.sortDir;
@@ -333,6 +375,11 @@ function app() {
 
     fmtScore(val) { return val == null ? '—' : val.toFixed(2); },
 
+    fmtPay(hourly) {
+      if (hourly == null) return '—';
+      return '$' + hourly.toFixed(0) + '/h';
+    },
+
     fmtDeadline(iso) {
       if (!iso) return '—';
       return new Date(iso).toLocaleDateString('en-CA', { month:'short', day:'numeric', timeZone:'UTC' });
@@ -343,10 +390,9 @@ function app() {
                fde:'FDE', mts:'MTS', power_electronics:'PWR' }[r] || r;
     },
 
-    snippet(text, max = 500) {
+    snippet(text) {
       if (!text) return '';
-      const t = text.replace(/\n{3,}/g, '\n\n').trim();
-      return t.length > max ? t.slice(0, max) + '…' : t;
+      return text.replace(/\n{3,}/g, '\n\n').trim();
     },
   };
 }

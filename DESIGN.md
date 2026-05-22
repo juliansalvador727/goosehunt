@@ -149,7 +149,7 @@ If we change the model or the input text strategy, we need to re-embed everythin
 - 2000 rows × 384 dims = 3MB in memory. Exact cosine similarity is a single numpy matmul, ~5ms.
 - HNSW or IVFFlat indexes are overhead at this scale, not speedup. They exist for million-row corpora where O(N) is too slow.
 - One source of truth: SQLite. No sync layer between vector store and relational data.
-- Zero infrastructure: no Postgres instance, no Supabase account, no Docker, no migrations. The whole thing is a `.db` file.
+- One source of truth: no Postgres instance, no Supabase account, no separate vector-store service, no migrations. The whole thing is a `.db` file.
 
 ---
 
@@ -232,19 +232,35 @@ The full corpus fits in one JSON response (a few MB at most, embeddings excluded
     "score_firmware": 0.85,
     "score_software": 0.12,
     "score_resume": 0.43,
+    "comp_hourly": 26.49,
+    "comp_score": 0.24,
     ...
   }
 ]
 ```
 
-The `embedding` column is never sent to the client — it's only needed server-side for scoring.
+`embedding` and `raw_fields_json` are never sent to the client — embeddings are only needed server-side for scoring, and raw fields are only needed to extract `comp_hourly`.
+
+### Compensation parsing
+
+`web/main.py` parses the `Compensation and Benefits` field from `raw_fields_json` at request time (no extra DB column needed). The free-text field contains wildly inconsistent formats across postings, so the parser uses a prioritized set of regexes:
+
+1. **Hourly** (most common for co-op): `$25-$29 hourly`, `$27/hr`, `Hourly Rate: 20.29-24.11`, `The hourly wage...is $26.49`
+2. **Bi-weekly**: `$2,045 - $2,523 / bi-weekly` → divide by 80 hrs
+3. **Weekly**: `$1,600 per week` → divide by 40 hrs
+4. **Monthly**: `$4,264 to $5,200 per month` → divide by 173.3 hrs
+5. **Annual**: `$45,000 - $55,000 per year` → divide by 2,080 hrs
+6. **Fallback**: bare `$X - $Y` where midpoint is in [10, 100] → treated as hourly
+
+The result is `comp_hourly` (estimated $/hr). `comp_score` normalizes this to [0, 1] with $16/hr → 0.0 and $60/hr → 1.0. ~63% of postings yield a parseable rate; the rest return `null` (shown as `—`).
 
 ### UI features
 
 - Search box: filters on `title`, `org`, `location` (client-side, instant).
 - Role checkboxes: show only postings with score > threshold for checked roles.
 - Column headers: click to sort ascending/descending. Default sort: `score_resume` desc.
-- Color coding: high scores get a green tint, low scores grey.
+- Color coding: high scores get a green tint, low scores grey. Same gradient applied to the Pay column.
+- **Pay column**: sortable by `comp_score`; cells display as `$26/h` with a tooltip showing the full estimated rate. Posts with no parseable pay show `—`.
 - Each row shows the `job_id` so you can cross-reference on WaterlooWorks directly.
 - Click a posting title: expands an inline detail panel (▸/▾ indicator) showing Summary, Responsibilities, and Required Skills — each truncated to 500 chars. One panel open at a time; click again to collapse.
 
@@ -254,7 +270,7 @@ The `embedding` column is never sent to the client — it's only needed server-s
 
 ### What's in the image
 
-`python:3.12-slim` base. CPU-only PyTorch is installed first (via `--index-url https://download.pytorch.org/whl/cpu`) before `requirements.txt`, so sentence-transformers doesn't pull the CUDA build (~750 MB vs ~3 GB). The Playwright Python package is installed (it's in `requirements.txt`) but the Chromium binary is not — the scraper cannot run inside the container.
+`python:3.12-slim` base with uv copied from `ghcr.io/astral-sh/uv:latest`. CPU-only PyTorch is installed first (via `--index-url https://download.pytorch.org/whl/cpu`) before `requirements.txt`, so sentence-transformers doesn't pull the CUDA build (~750 MB vs ~3 GB). uv's `--system` flag installs directly into the image Python without a venv. The Playwright Python package is installed (it's in `requirements.txt`) but the Chromium binary is not — the scraper cannot run inside the container.
 
 ### What's not in the image
 
