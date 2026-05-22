@@ -100,15 +100,13 @@ Zero infrastructure. The entire corpus of WW postings for one term is small (hun
 
 ### Upsert strategy
 
-```sql
-INSERT INTO postings (...) VALUES (...)
-ON CONFLICT(job_id) DO UPDATE SET
-    updated_at = excluded.updated_at,
-    raw_fields_json = excluded.raw_fields_json,
-    -- ... other content fields ...
-    -- embedding and score_* columns are NOT overwritten here;
-    -- they're maintained by the embed and score pipelines
-```
+For each record, `ingest.py` pre-checks existence with a `SELECT`, then:
+
+- **Not found** → `INSERT` all content fields; `embedding` and `score_*` are not included so they default to NULL.
+- **Found, `raw_fields_json` unchanged** → skip (counts as "no change").
+- **Found, content differs** → `UPDATE` content fields only; `scraped_at`, `embedding`, and `score_*` are not touched.
+
+This approach (pre-check + compare) rather than `ON CONFLICT DO UPDATE` enables a clean three-way summary: inserted / updated / skipped.
 
 Re-runs refresh posting content without nuking embeddings or scores.
 

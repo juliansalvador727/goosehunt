@@ -11,7 +11,7 @@ Personal WaterlooWorks co-op posting aggregator. Scrapes the Employer Direct boa
 1. **Scrapes** all postings from the Employer Direct board using Playwright with a persistent browser profile (you log in once, Duo once, then leave it alone).
 2. **Stores** every posting in a local SQLite database — resumable, so a crashed scrape picks up where it left off.
 3. **Classifies** each posting against six target roles using tunable keyword lists in `config/roles.yaml`.
-4. **Scores** each posting against your resume PDF using TF-IDF cosine similarity.
+4. **Scores** each posting against your resume PDF using cosine similarity on sentence embeddings.
 5. **Serves** a local web UI — one page, every posting loaded, client-side sort/filter, no build step.
 
 ---
@@ -26,7 +26,7 @@ Personal WaterlooWorks co-op posting aggregator. Scrapes the Employer Direct boa
 | `score_software`  | Software / SWE            |
 | `score_fde`       | Forward-deployed engineer |
 | `score_mts`       | Member of technical staff |
-| `score_resume`    | Resume TF-IDF similarity  |
+| `score_resume`    | Resume cosine similarity  |
 
 ---
 
@@ -43,6 +43,8 @@ goosehunt/
 ├── db/
 │   ├── schema.sql          # CREATE TABLE statements
 │   └── ingest.py           # JSONL → SQLite
+├── embed/
+│   └── embed_postings.py   # sentence-transformers → BLOB column
 ├── classifier/
 │   └── scorer.py           # keyword scorer + TF-IDF resume scorer
 ├── resume/
@@ -71,7 +73,8 @@ CREATE TABLE postings (
     title             TEXT,
     org               TEXT,
     location          TEXT,
-    deadline          TEXT,
+    deadline          TEXT,          -- raw string from scraper
+    deadline_iso      TEXT,          -- ISO 8601, parsed during ingest
     work_term         TEXT,
     openings          INTEGER,
     summary           TEXT,
@@ -80,6 +83,7 @@ CREATE TABLE postings (
     raw_fields_json   TEXT,          -- full label→value dict as JSON
     scraped_at        TEXT,
     updated_at        TEXT,
+    embedding         BLOB,          -- float32[384] via all-MiniLM-L6-v2
     score_firmware    REAL,
     score_embedded    REAL,
     score_hardware    REAL,
@@ -112,9 +116,10 @@ make install     # create venv, pip install, playwright install chromium
 make scrape      # run scraper → data/postings.jsonl
 make scrape-diag # inspect page state, fetch one posting, write data/diag.md
 make test        # run unit tests (no browser)
-make ingest      # ingest JSONL → SQLite        (not yet implemented)
-make score       # run classifier + resume scorer (not yet implemented)
-make serve       # start FastAPI on localhost:8000 (not yet implemented)
+make ingest      # ingest JSONL → SQLite
+make embed       # embed postings → BLOB column
+make score       # run classifier + resume scorer  (not yet implemented)
+make serve       # start FastAPI on localhost:8000  (not yet implemented)
 ```
 
 ---
@@ -139,8 +144,9 @@ On first run, a Chromium window opens. Log in (Duo if prompted), navigate to the
 
 - [x] README
 - [x] Scraper → JSONL (end-to-end verified)
-- [ ] SQLite schema + JSONL ingestion
+- [x] SQLite schema + JSONL ingestion
+- [x] Posting embedding pipeline (sentence-transformers → BLOB column)
 - [ ] Keyword classifier with YAML config
-- [ ] Resume parser + TF-IDF scorer
+- [ ] Resume parser + cosine-sim scorer
 - [ ] FastAPI + Alpine.js UI
 - [ ] Makefile wiring everything together
