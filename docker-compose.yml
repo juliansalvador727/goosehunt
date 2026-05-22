@@ -1,0 +1,12 @@
+services:
+  goosehunt:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./resume.pdf:/app/resume.pdf:ro
+      - hf_cache:/root/.cache/huggingface
+
+volumes:
+  hf_cache:

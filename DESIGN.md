@@ -246,6 +246,39 @@ The `embedding` column is never sent to the client — it's only needed server-s
 - Column headers: click to sort ascending/descending. Default sort: `score_resume` desc.
 - Color coding: high scores get a green tint, low scores grey.
 - Each row shows the `job_id` so you can cross-reference on WaterlooWorks directly.
+- Click a posting title: expands an inline detail panel (▸/▾ indicator) showing Summary, Responsibilities, and Required Skills — each truncated to 500 chars. One panel open at a time; click again to collapse.
+
+---
+
+## Docker
+
+### What's in the image
+
+`python:3.12-slim` base. CPU-only PyTorch is installed first (via `--index-url https://download.pytorch.org/whl/cpu`) before `requirements.txt`, so sentence-transformers doesn't pull the CUDA build (~750 MB vs ~3 GB). The Playwright Python package is installed (it's in `requirements.txt`) but the Chromium binary is not — the scraper cannot run inside the container.
+
+### What's not in the image
+
+`data/` and `resume.pdf` are excluded from the image via `.dockerignore` and bind-mounted at runtime. The HuggingFace model cache is a named Docker volume (`hf_cache`) so the model survives container recreates without re-downloading.
+
+### Startup sequence
+
+`docker-entrypoint.sh` runs the full pipeline on every container start, then hands off to uvicorn:
+
+```
+ingest → embed_postings → scorer → embed_resume → uvicorn
+```
+
+All pipeline steps are idempotent, so re-running them on an already-populated DB is fast (seconds). The `exec` before uvicorn ensures it gets PID 1 and receives signals cleanly.
+
+### Scraper constraint
+
+The scraper needs a headed Chromium window with a persistent WaterlooWorks session (`scraper/profile/`). This cannot run in Docker without X11 forwarding or VNC, and the session is tied to the local machine anyway. The workflow is: scrape locally with `make scrape`, then run the container anywhere with `data/postings.jsonl` bind-mounted in.
+
+### Why not Dockerize the scraper
+
+- WW bot detection is best handled by headed + persistent profile, which requires a real display
+- The session cookies live in `scraper/profile/` on the local machine — moving them into a container adds complexity for no benefit
+- The corpus is scraped once per term, not continuously; there's no operational reason to run the scraper on a remote device
 
 ---
 
@@ -284,5 +317,5 @@ localhost:8000          ← FastAPI + Alpine.js UI
 | Vector database (pgvector, FAISS, etc.) | 2000 × 384 fits in 3MB; numpy matmul is faster than any index at this scale        |
 | OpenAI/Anthropic embeddings             | Local model is free, offline, and quality difference is small for this corpus      |
 | Auth / multi-user                       | Personal tool; single local user                                                   |
-| Deployment                              | Runs locally; no public hosting needed or wanted                                   |
+| Public deployment                       | Personal tool; Docker is for local reproducibility, not public hosting             |
 | On-demand LLM evaluation in v1          | `llm_evals` table is reserved for later; not wired into the UI yet                 |

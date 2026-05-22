@@ -1,0 +1,9 @@
+.venv/
+data/
+scraper/profile/
+resume.pdf
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.git/

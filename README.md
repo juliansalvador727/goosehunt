@@ -60,6 +60,10 @@ goosehunt/
 │   ├── postings.db         # SQLite DB (gitignored)
 │   └── diag.md             # diagnostic output from --diag (gitignored)
 ├── resume.pdf              # your resume (gitignored)
+├── Dockerfile
+├── docker-compose.yml
+├── docker-entrypoint.sh
+├── .dockerignore
 ├── Makefile
 └── requirements.txt
 ```
@@ -129,6 +133,8 @@ make serve       # start FastAPI on localhost:8000
 
 ## Setup
 
+### Local (venv)
+
 ```bash
 make install
 
@@ -137,9 +143,25 @@ cp /path/to/resume.pdf resume.pdf
 
 # first run: browser opens, you log in, navigate to Employer Direct, press Enter
 make scrape
+make ingest && make embed && make score
+make serve
 ```
 
 On first run, a Chromium window opens. Log in (Duo if prompted), navigate to the Employer Direct board, apply any filters you want, wait for job listings to appear, then press Enter in the terminal.
+
+### Docker (any device, no Python setup)
+
+Scraping must still run locally (needs your WaterlooWorks session). Everything after that runs in the container.
+
+```bash
+# scrape locally first
+make scrape
+
+# on any device with Docker — copy the repo + data/postings.jsonl + resume.pdf, then:
+docker compose up
+```
+
+`docker compose up` runs ingest → embed → score → serve on every start, then keeps the UI alive at `http://localhost:8000`. The HuggingFace model is cached in a named volume so it's only downloaded once.
 
 ---
 

@@ -97,11 +97,18 @@
     thead th:hover { background: #f1f5f9; color: #1e293b; }
     thead th.sorted { background: #eff6ff; color: #1d4ed8; }
 
-    tbody tr { border-bottom: 1px solid #f1f5f9; }
-    tbody tr:hover { background: #f8fafc; }
+    tbody { border-bottom: 1px solid #f1f5f9; }
+    tbody tr.data-row:hover { background: #f8fafc; }
 
     td { padding: 6px 10px; vertical-align: middle; }
-    td.title { font-weight: 500; color: #1e293b; max-width: 280px; }
+    td.title {
+      font-weight: 500;
+      color: #1e293b;
+      max-width: 280px;
+      cursor: pointer;
+      user-select: none;
+    }
+    td.title:hover .title-text { color: #1d4ed8; text-decoration: underline; }
     td.org   { color: #475569; max-width: 180px; }
     td.loc   { color: #64748b; white-space: nowrap; }
     td.dl    { white-space: nowrap; color: #64748b; }
@@ -117,8 +124,25 @@
     .sort-icon { opacity: 0.35; margin-left: 2px; }
     .sort-icon.on { opacity: 1; }
 
-    .loading { padding: 40px; text-align: center; color: #94a3b8; }
     .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .expand-icon { opacity: 0.4; font-size: 10px; margin-right: 5px; }
+
+    /* ── detail panel ────────────────────────────────────────── */
+    tr.detail-row td { padding: 0; background: #f8fafc; border-top: 1px solid #e2e8f0; }
+    .detail-panel { padding: 14px 20px 16px; max-height: 320px; overflow-y: auto; }
+    .detail-section { margin-bottom: 12px; }
+    .detail-section:last-child { margin-bottom: 0; }
+    .detail-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: #94a3b8;
+      margin-bottom: 4px;
+    }
+    .detail-text { color: #374151; font-size: 12px; line-height: 1.6; white-space: pre-wrap; }
+
+    .loading { padding: 40px; text-align: center; color: #94a3b8; }
   </style>
 </head>
 
@@ -156,20 +180,20 @@
   <table x-show="postings.length">
     <thead>
       <tr>
-        <th @click="sort('title')"    :class="{sorted: sortCol==='title'}">
+        <th @click="sort('title')"        :class="{sorted: sortCol==='title'}">
           Title <span class="sort-icon" :class="{on: sortCol==='title'}" x-text="arrow('title')"></span>
         </th>
-        <th @click="sort('org')"      :class="{sorted: sortCol==='org'}">
+        <th @click="sort('org')"          :class="{sorted: sortCol==='org'}">
           Org <span class="sort-icon" :class="{on: sortCol==='org'}" x-text="arrow('org')"></span>
         </th>
-        <th @click="sort('location')" :class="{sorted: sortCol==='location'}">
+        <th @click="sort('location')"     :class="{sorted: sortCol==='location'}">
           Location <span class="sort-icon" :class="{on: sortCol==='location'}" x-text="arrow('location')"></span>
         </th>
         <th @click="sort('deadline_iso')" :class="{sorted: sortCol==='deadline_iso'}">
           Deadline <span class="sort-icon" :class="{on: sortCol==='deadline_iso'}" x-text="arrow('deadline_iso')"></span>
         </th>
         <th @click="sort('score_resume')" :class="{sorted: sortCol==='score_resume'}">
-          Resume ↕ <span class="sort-icon" :class="{on: sortCol==='score_resume'}" x-text="arrow('score_resume')"></span>
+          Resume <span class="sort-icon" :class="{on: sortCol==='score_resume'}" x-text="arrow('score_resume')"></span>
         </th>
         <template x-for="r in roleList" :key="r">
           <th @click="sort('score_' + r)" :class="{sorted: sortCol==='score_'+r}">
@@ -183,22 +207,58 @@
         <th>ID</th>
       </tr>
     </thead>
-    <tbody>
-      <template x-for="p in filtered" :key="p.job_id">
-        <tr>
-          <td class="title"><div class="truncate" x-text="p.title" :title="p.title"></div></td>
-          <td class="org">  <div class="truncate" x-text="p.org"   :title="p.org"></div></td>
-          <td class="loc"   x-text="p.location"></td>
-          <td class="dl"    x-text="fmtDeadline(p.deadline_iso)" :title="p.deadline"></td>
-          <td class="score" :style="scoreStyle(p.score_resume, true)"  x-text="fmtScore(p.score_resume)"></td>
+
+    <!-- one <tbody> per posting so x-for can render two <tr> per item -->
+    <template x-for="p in filtered" :key="p.job_id">
+      <tbody>
+
+        <!-- ── main row ── -->
+        <tr class="data-row">
+          <td class="title" @click="toggle(p.job_id)">
+            <div class="truncate">
+              <span class="expand-icon" x-text="expanded === p.job_id ? '▾' : '▸'"></span>
+              <span class="title-text" x-text="p.title" :title="p.title"></span>
+            </div>
+          </td>
+          <td class="org"><div class="truncate" x-text="p.org" :title="p.org"></div></td>
+          <td class="loc" x-text="p.location"></td>
+          <td class="dl"  x-text="fmtDeadline(p.deadline_iso)" :title="p.deadline"></td>
+          <td class="score" :style="scoreStyle(p.score_resume, true)" x-text="fmtScore(p.score_resume)"></td>
           <template x-for="r in roleList" :key="r">
             <td class="score" :style="scoreStyle(p['score_' + r])" x-text="fmtScore(p['score_' + r])"></td>
           </template>
           <td class="openings" x-text="p.openings ?? '—'"></td>
           <td class="job-id"   x-text="p.job_id"></td>
         </tr>
-      </template>
-    </tbody>
+
+        <!-- ── detail row ── -->
+        <tr class="detail-row" x-show="expanded === p.job_id">
+          <td colspan="14">
+            <div class="detail-panel">
+              <template x-if="p.summary">
+                <div class="detail-section">
+                  <div class="detail-label">Summary</div>
+                  <div class="detail-text" x-text="snippet(p.summary)"></div>
+                </div>
+              </template>
+              <template x-if="p.responsibilities">
+                <div class="detail-section">
+                  <div class="detail-label">Responsibilities</div>
+                  <div class="detail-text" x-text="snippet(p.responsibilities)"></div>
+                </div>
+              </template>
+              <template x-if="p.required_skills">
+                <div class="detail-section">
+                  <div class="detail-label">Required Skills</div>
+                  <div class="detail-text" x-text="snippet(p.required_skills)"></div>
+                </div>
+              </template>
+            </div>
+          </td>
+        </tr>
+
+      </tbody>
+    </template>
   </table>
 </div>
 
@@ -211,6 +271,7 @@ function app() {
     sortCol: 'score_resume',
     sortDir: -1,
     threshold: 0.1,
+    expanded: null,
     roleList: ['firmware','embedded','hardware','software','fde','mts','power_electronics'],
     roles: { firmware:false, embedded:false, hardware:false, software:false, fde:false, mts:false, power_electronics:false },
 
@@ -242,7 +303,7 @@ function app() {
       this.filtered = [...rows].sort((a, b) => {
         const av = a[col], bv = b[col];
         if (av == null && bv == null) return 0;
-        if (av == null) return 1;   // nulls always last
+        if (av == null) return 1;
         if (bv == null) return -1;
         return (av < bv ? -1 : av > bv ? 1 : 0) * dir;
       });
@@ -253,12 +314,15 @@ function app() {
       this.applyFilters();
     },
 
+    toggle(jobId) {
+      this.expanded = this.expanded === jobId ? null : jobId;
+    },
+
     arrow(col) {
       if (this.sortCol !== col) return '↕';
       return this.sortDir === -1 ? '↓' : '↑';
     },
 
-    // resume scores top out ~0.30; role scores are 0-1. normalize separately for colour.
     scoreStyle(val, isResume = false) {
       if (val == null) return 'background:#f8fafc; color:#cbd5e1';
       const n = isResume ? Math.min(val / 0.32, 1) : val;
@@ -277,6 +341,12 @@ function app() {
     roleLabel(r) {
       return { firmware:'FW', embedded:'EM', hardware:'HW', software:'SW',
                fde:'FDE', mts:'MTS', power_electronics:'PWR' }[r] || r;
+    },
+
+    snippet(text, max = 500) {
+      if (!text) return '';
+      const t = text.replace(/\n{3,}/g, '\n\n').trim();
+      return t.length > max ? t.slice(0, max) + '…' : t;
     },
   };
 }
