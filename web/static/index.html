@@ -4,319 +4,644 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>goosehunt</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
   <script defer src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    [x-cloak] { display: none !important; }
+
+    :root {
+      --bg:       #0d0d0f;
+      --s1:       #111114;
+      --s2:       #16161b;
+      --s3:       #1c1c23;
+      --bd:       #1f1f28;
+      --bd2:      #2a2a36;
+      --tx:       #e2e2ea;
+      --tx2:      #8a8a9c;
+      --tx3:      #4e4e62;
+      --ac:       #3b82f6;
+      --ac-bg:    rgba(59,130,246,.10);
+      --green:    hsl(142,65%,58%);
+      --amber:    #f59e0b;
+      --mono:     "JetBrains Mono","Fira Code",ui-monospace,monospace;
+      --sans:     "Inter",system-ui,-apple-system,sans-serif;
+    }
+
+    html, body { height: 100%; overflow: hidden; }
 
     body {
-      font-family: system-ui, -apple-system, sans-serif;
+      font-family: var(--sans);
       font-size: 13px;
-      background: #f0f2f5;
-      height: 100vh;
+      background: var(--bg);
+      color: var(--tx);
       display: flex;
       flex-direction: column;
+      height: 100vh;
+    }
+
+    /* ── command palette overlay ──────────────────────────────── */
+    #pal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.55);
+      backdrop-filter: blur(2px);
+      z-index: 500;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding-top: 14vh;
+    }
+    #palette {
+      width: 520px;
+      background: var(--s2);
+      border: 1px solid var(--bd2);
+      border-radius: 10px;
+      box-shadow: 0 32px 80px rgba(0,0,0,.7);
       overflow: hidden;
     }
-
-    /* ── header ─────────────────────────────────────────────── */
-    #header {
-      flex-shrink: 0;
-      background: #1e293b;
-      color: #e2e8f0;
-      padding: 10px 16px;
+    #pal-input {
+      width: 100%;
+      padding: 13px 16px;
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid var(--bd);
+      color: var(--tx);
+      font-family: var(--sans);
+      font-size: 14px;
+    }
+    #pal-input:focus { outline: none; }
+    #pal-input::placeholder { color: var(--tx3); }
+    .pal-list { max-height: 300px; overflow-y: auto; padding: 5px; }
+    .pal-item {
       display: flex;
       align-items: center;
-      gap: 14px;
-      flex-wrap: wrap;
-    }
-
-    #header h1 { font-size: 15px; font-weight: 700; letter-spacing: 0.5px; color: #f1f5f9; }
-
-    input[type=search] {
-      padding: 5px 10px;
-      border: 1px solid #475569;
-      border-radius: 5px;
-      font-size: 13px;
-      width: 230px;
-      background: #0f172a;
-      color: #e2e8f0;
-    }
-    input[type=search]::placeholder { color: #64748b; }
-    input[type=search]:focus { outline: none; border-color: #60a5fa; }
-
-    .role-filters { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-    .role-chip label {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      padding: 3px 9px;
-      border: 1px solid #475569;
-      border-radius: 12px;
+      padding: 9px 11px;
+      border-radius: 6px;
       cursor: pointer;
-      user-select: none;
-      color: #94a3b8;
-      transition: background 0.1s, color 0.1s;
+      font-size: 13px;
+      color: var(--tx2);
+      transition: background .07s, color .07s;
+      gap: 10px;
     }
-    .role-chip label:hover { border-color: #60a5fa; color: #e2e8f0; }
-    .role-chip input { display: none; }
-    .role-chip.active label { background: #1d4ed8; border-color: #3b82f6; color: #fff; font-weight: 600; }
+    .pal-item:hover, .pal-item.hi { background: var(--ac-bg); color: var(--tx); }
+    .pal-item .pal-cat { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--tx3); width: 42px; flex-shrink: 0; }
+    .pal-footer {
+      display: flex;
+      gap: 14px;
+      padding: 8px 16px;
+      border-top: 1px solid var(--bd);
+      font-size: 10px;
+      color: var(--tx3);
+    }
+    .pal-footer kbd {
+      font-family: var(--mono);
+      font-size: 9px;
+      background: var(--s3);
+      border: 1px solid var(--bd2);
+      border-radius: 3px;
+      padding: 1px 4px;
+      margin-right: 3px;
+    }
 
-    .threshold-row { display: flex; align-items: center; gap: 6px; color: #94a3b8; font-size: 12px; }
-    input[type=number] {
-      width: 52px;
-      padding: 3px 6px;
-      border: 1px solid #475569;
-      border-radius: 4px;
-      background: #0f172a;
-      color: #e2e8f0;
+    /* ── topbar ───────────────────────────────────────────────── */
+    #topbar {
+      flex-shrink: 0;
+      height: 44px;
+      background: var(--s1);
+      border-bottom: 1px solid var(--bd);
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      gap: 0;
+      z-index: 100;
+    }
+    .logo {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--tx);
+      letter-spacing: -.01em;
+      margin-right: 14px;
+      flex-shrink: 0;
+    }
+    .logo em { font-style: normal; color: var(--tx3); font-weight: 400; }
+
+    /* search */
+    .srch-wrap { position: relative; flex-shrink: 0; }
+    .srch-wrap .srch-icon {
+      position: absolute; left: 9px; top: 50%;
+      transform: translateY(-50%);
+      color: var(--tx3); font-size: 11px; pointer-events: none;
+      font-style: normal;
+    }
+    #search {
+      width: 210px;
+      padding: 5px 10px 5px 27px;
+      background: var(--s2);
+      border: 1px solid var(--bd);
+      border-radius: 6px;
+      color: var(--tx);
+      font-family: var(--sans);
       font-size: 12px;
+      transition: border-color .15s, width .18s;
     }
-    input[type=number]:focus { outline: none; border-color: #60a5fa; }
+    #search::placeholder { color: var(--tx3); }
+    #search:focus { outline: none; border-color: var(--ac); width: 270px; }
 
-    .count { margin-left: auto; color: #64748b; font-size: 12px; white-space: nowrap; }
+    .vdiv { width: 1px; height: 20px; background: var(--bd); margin: 0 11px; flex-shrink: 0; }
 
-    /* ── table ───────────────────────────────────────────────── */
-    .table-wrap { flex: 1; overflow: auto; background: #fff; }
+    /* chips */
+    .chips { display: flex; gap: 4px; align-items: center; }
+    .chip {
+      display: flex; align-items: center; gap: 3px;
+      padding: 3px 8px;
+      border: 1px solid var(--bd); border-radius: 5px;
+      cursor: pointer; user-select: none;
+      color: var(--tx3); font-size: 11px; font-weight: 500;
+      transition: border-color .1s, color .1s, background .1s;
+      white-space: nowrap; background: transparent;
+    }
+    .chip:hover { border-color: var(--bd2); color: var(--tx2); }
+    .chip.on { background: var(--ac-bg); border-color: var(--ac); color: var(--ac); }
+    .chip input { display: none; }
+
+    .thr { display: flex; align-items: center; gap: 5px; color: var(--tx3); font-size: 11px; flex-shrink: 0; }
+    .thr input[type=number] {
+      width: 46px; padding: 3px 5px;
+      border: 1px solid var(--bd); border-radius: 4px;
+      background: var(--s2); color: var(--tx);
+      font-size: 11px; font-family: var(--mono); text-align: center;
+    }
+    .thr input:focus { outline: none; border-color: var(--ac); }
+
+    .topbar-r { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+    .count { font-size: 11px; color: var(--tx3); font-family: var(--mono); white-space: nowrap; }
+    .pal-btn {
+      display: flex; align-items: center; gap: 4px;
+      padding: 3px 8px;
+      background: var(--s3); border: 1px solid var(--bd2); border-radius: 5px;
+      color: var(--tx3); font-family: var(--mono); font-size: 10.5px;
+      cursor: pointer; white-space: nowrap; transition: border-color .1s, color .1s;
+    }
+    .pal-btn:hover { border-color: var(--bd2); color: var(--tx2); }
+
+    /* ── workspace ────────────────────────────────────────────── */
+    #workspace { flex: 1; display: flex; overflow: hidden; }
+
+    /* ── list pane ────────────────────────────────────────────── */
+    #list-pane {
+      flex: 1; min-width: 0;
+      display: flex; flex-direction: column;
+      overflow: hidden;
+      border-right: 1px solid var(--bd);
+    }
+    #tbl-scroll {
+      flex: 1; overflow: auto;
+    }
+    #tbl-scroll::-webkit-scrollbar { width: 5px; height: 5px; }
+    #tbl-scroll::-webkit-scrollbar-track { background: transparent; }
+    #tbl-scroll::-webkit-scrollbar-thumb { background: var(--bd2); border-radius: 3px; }
 
     table { width: 100%; border-collapse: collapse; }
 
     thead th {
-      position: sticky;
-      top: 0;
-      background: #f8fafc;
-      border-bottom: 2px solid #e2e8f0;
-      padding: 7px 10px;
-      text-align: left;
-      white-space: nowrap;
-      cursor: pointer;
-      user-select: none;
-      font-weight: 600;
-      color: #475569;
-      font-size: 12px;
+      position: sticky; top: 0; z-index: 10;
+      background: var(--s1);
+      border-bottom: 1px solid var(--bd);
+      padding: 6px 9px;
+      text-align: left; white-space: nowrap;
+      cursor: pointer; user-select: none;
+      font-size: 10.5px; font-weight: 600;
+      color: var(--tx3);
+      letter-spacing: .04em; text-transform: uppercase;
     }
-    thead th:hover { background: #f1f5f9; color: #1e293b; }
-    thead th.sorted { background: #eff6ff; color: #1d4ed8; }
+    thead th:hover { color: var(--tx2); }
+    thead th.sk { color: var(--ac); }
 
-    tbody { border-bottom: 1px solid #f1f5f9; }
-    tbody tr.data-row:hover { background: #f8fafc; }
+    .sa { margin-left: 2px; opacity: .35; font-size: 9px; font-style: normal; }
+    .sa.on { opacity: 1; }
 
-    td { padding: 6px 10px; vertical-align: middle; }
-    td.title {
-      font-weight: 500;
-      color: #1e293b;
-      max-width: 280px;
+    tbody tr {
+      border-bottom: 1px solid var(--bd);
       cursor: pointer;
-      user-select: none;
+      transition: background .04s;
     }
-    td.title:hover .title-text { color: #1d4ed8; text-decoration: underline; }
-    td.org   { color: #475569; max-width: 180px; }
-    td.loc   { color: #64748b; white-space: nowrap; }
-    td.dl    { white-space: nowrap; color: #64748b; }
-    td.score {
+    tbody tr:hover { background: var(--s2); }
+    tbody tr.sel { background: var(--ac-bg); }
+    tbody tr.sel .tc { color: var(--ac); }
+
+    td {
+      padding: 5px 9px;
+      vertical-align: middle;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+
+    .tc  { font-size: 12.5px; font-weight: 500; color: var(--tx); max-width: 220px; }
+    .oc  { font-size: 12px; color: var(--tx2); max-width: 140px; }
+    .lc  { font-size: 11.5px; color: var(--tx3); max-width: 110px; }
+    .dc  { font-family: var(--mono); font-size: 11px; color: var(--tx3); white-space: nowrap; }
+    .dc.urg { color: var(--amber); }
+    .sc  {
       text-align: center;
-      font-variant-numeric: tabular-nums;
-      font-size: 12px;
-      min-width: 48px;
+      font-family: var(--mono); font-size: 11px; font-weight: 500;
+      padding: 4px 5px; min-width: 40px;
     }
-    td.score.pay { min-width: 56px; }
-    td.openings { text-align: center; color: #64748b; }
-    td.job-id   { font-family: monospace; font-size: 11px; color: #94a3b8; white-space: nowrap; }
-
-    .sort-icon { opacity: 0.35; margin-left: 2px; }
-    .sort-icon.on { opacity: 1; }
-
-    .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .expand-icon { opacity: 0.4; font-size: 10px; margin-right: 5px; }
-
-    /* ── detail panel ────────────────────────────────────────── */
-    tr.detail-row td { padding: 0; background: #f8fafc; border-top: 1px solid #e2e8f0; }
-    .detail-panel { padding: 14px 20px 16px; max-height: 320px; overflow-y: auto; }
-    .detail-section { margin-bottom: 12px; }
-    .detail-section:last-child { margin-bottom: 0; }
-    .detail-label {
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.6px;
-      color: #94a3b8;
-      margin-bottom: 4px;
+    .nc  { text-align: center; font-family: var(--mono); font-size: 11px; color: var(--tx3); min-width: 28px; }
+    .ic  {
+      font-family: var(--mono); font-size: 10.5px; color: var(--tx3);
+      cursor: pointer; white-space: nowrap;
+      transition: color .1s;
     }
-    .detail-text { color: #374151; font-size: 12px; line-height: 1.6; white-space: pre-wrap; }
+    .ic:hover { color: var(--tx2); }
 
-    .loading { padding: 40px; text-align: center; color: #94a3b8; }
-
-    .kw-chip {
-      display: inline-block;
-      padding: 2px 7px;
-      border-radius: 10px;
-      background: #e2e8f0;
-      color: #475569;
-      font-size: 11px;
-      font-family: monospace;
+    .empty-list {
+      display: flex; align-items: center; justify-content: center;
+      height: 120px; color: var(--tx3); font-size: 12px;
     }
+
+    /* loading spinner text */
+    .loading {
+      display: flex; align-items: center; justify-content: center;
+      height: 200px; color: var(--tx3); font-size: 12px; gap: 8px;
+    }
+
+    /* ── detail pane ──────────────────────────────────────────── */
+    #detail-pane {
+      width: 400px; flex-shrink: 0;
+      overflow-y: auto; overflow-x: hidden;
+      background: var(--s1);
+    }
+    #detail-pane::-webkit-scrollbar { width: 5px; }
+    #detail-pane::-webkit-scrollbar-track { background: transparent; }
+    #detail-pane::-webkit-scrollbar-thumb { background: var(--bd2); border-radius: 3px; }
+
+    .dp-empty {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      height: 100%; gap: 8px;
+      color: var(--tx3); font-size: 12px;
+    }
+    .dp-empty .hint { font-size: 11px; }
+    .dp-empty kbd {
+      font-family: var(--mono); font-size: 10px;
+      background: var(--s3); border: 1px solid var(--bd2);
+      border-radius: 3px; padding: 1px 5px;
+    }
+
+    .dp { padding: 18px 18px 28px; }
+
+    .dp-title {
+      font-size: 15px; font-weight: 600; color: var(--tx);
+      line-height: 1.35; margin-bottom: 7px;
+    }
+    .dp-meta {
+      display: flex; align-items: center; gap: 5px;
+      color: var(--tx3); font-size: 11.5px; flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .dp-meta .co  { color: var(--tx2); font-weight: 500; }
+    .dp-meta .dln { font-family: var(--mono); }
+    .dp-meta .dln.urg { color: var(--amber); }
+    .dp-meta .pay-inline { font-family: var(--mono); font-size: 11px; color: var(--green); }
+    .dp-sep { opacity: .3; }
+
+    .dp-divider { height: 1px; background: var(--bd); margin: 14px 0; }
+
+    /* score grid */
+    .sg {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 5px;
+      margin-bottom: 14px;
+    }
+    .sb {
+      background: var(--s2); border: 1px solid var(--bd);
+      border-radius: 6px; padding: 7px 8px; text-align: center;
+    }
+    .sb-label {
+      font-size: 9px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .06em;
+      color: var(--tx3); margin-bottom: 3px;
+    }
+    .sb-val { font-family: var(--mono); font-size: 13px; font-weight: 500; }
+
+    /* apply row */
+    .apply-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 9px 11px;
+      background: var(--s2); border: 1px solid var(--bd);
+      border-radius: 7px; margin-bottom: 12px;
+    }
+    .apply-lbl { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--tx3); flex-shrink: 0; }
+    .apply-val { font-size: 11.5px; color: var(--ac); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: none; flex: 1; }
+    .apply-val:hover { text-decoration: underline; }
+    .cp-btn {
+      flex-shrink: 0; padding: 3px 7px;
+      border: 1px solid var(--bd2); border-radius: 4px;
+      background: var(--s3); color: var(--tx3);
+      font-size: 10px; cursor: pointer; font-family: var(--sans);
+      transition: border-color .1s, color .1s;
+    }
+    .cp-btn:hover { border-color: var(--ac); color: var(--ac); }
+    .cp-btn.ok { color: var(--green); border-color: rgba(34,197,94,.3); }
+
+    .id-row {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 14px;
+    }
+    .id-lbl { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--tx3); }
+    .id-val { font-family: var(--mono); font-size: 11px; color: var(--tx2); }
+
+    /* keyword chips */
+    .sec { margin-bottom: 15px; }
+    .sec-lbl {
+      font-size: 10px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .06em;
+      color: var(--tx3); margin-bottom: 7px;
+    }
+    .kw-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+    .kw {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 7px; border-radius: 4px;
+      font-family: var(--mono); font-size: 11px;
+      border: 1px solid transparent;
+    }
+    .kw-r { font-size: 8.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; opacity: .65; }
+    .kw-fw  { background:rgba(59,130,246,.10); color:#60a5fa; border-color:rgba(59,130,246,.18); }
+    .kw-em  { background:rgba(168,85,247,.10); color:#c084fc; border-color:rgba(168,85,247,.18); }
+    .kw-hw  { background:rgba(34,197,94,.10);  color:#4ade80; border-color:rgba(34,197,94,.18); }
+    .kw-sw  { background:rgba(20,184,166,.10); color:#2dd4bf; border-color:rgba(20,184,166,.18); }
+    .kw-fde { background:rgba(245,158,11,.10); color:#fbbf24; border-color:rgba(245,158,11,.18); }
+    .kw-mts { background:rgba(239,68,68,.10);  color:#f87171; border-color:rgba(239,68,68,.18); }
+    .kw-pwr { background:rgba(251,146,60,.10); color:#fb923c; border-color:rgba(251,146,60,.18); }
+
+    /* text sections */
+    .sec-txt {
+      font-size: 12px; line-height: 1.65; color: var(--tx2);
+      white-space: pre-wrap; max-height: 180px; overflow-y: auto;
+    }
+    .sec-txt::-webkit-scrollbar { width: 3px; }
+    .sec-txt::-webkit-scrollbar-thumb { background: var(--bd2); border-radius: 2px; }
   </style>
 </head>
 
-<body x-data="app()" x-init="init()">
+<body x-data="app()" x-init="init()" @keydown.window="onKey($event)">
 
-<!-- ── header ───────────────────────────────────────────────── -->
-<div id="header">
-  <h1>goosehunt</h1>
+<!-- ── command palette ────────────────────────────────────────── -->
+<div id="pal-overlay" x-show="pal" x-cloak @click.self="pal=false">
+  <div id="palette">
+    <input id="pal-input" x-ref="palIn" x-model="palQ" @input="palFilt()"
+           placeholder="Type a command…" autocomplete="off">
+    <div class="pal-list">
+      <template x-for="(item,i) in palItems" :key="item.id">
+        <div class="pal-item" :class="{hi:palI===i}" @click="palExec(item)">
+          <span class="pal-cat" x-text="item.cat"></span>
+          <span x-text="item.label"></span>
+        </div>
+      </template>
+      <template x-if="!palItems.length">
+        <div style="padding:14px 16px;color:var(--tx3);font-size:12px">No commands match</div>
+      </template>
+    </div>
+    <div class="pal-footer">
+      <span><kbd>↑↓</kbd>navigate</span>
+      <span><kbd>↵</kbd>run</span>
+      <span><kbd>esc</kbd>close</span>
+    </div>
+  </div>
+</div>
 
-  <input type="search" x-model="search" @input="applyFilters()" placeholder="search title, org, location…">
+<!-- ── topbar ─────────────────────────────────────────────────── -->
+<div id="topbar">
+  <span class="logo">goosehunt <em>/ employer direct</em></span>
 
-  <div class="role-filters">
+  <div class="srch-wrap">
+    <i class="srch-icon">⌕</i>
+    <input type="search" id="search" x-ref="srch" x-model="search"
+           @input="applyFilters()" placeholder="Search title, org, location…"
+           autocomplete="off" spellcheck="false">
+  </div>
+
+  <div class="vdiv"></div>
+
+  <div class="chips">
     <template x-for="r in roleList" :key="r">
-      <div class="role-chip" :class="{ active: roles[r] }">
-        <label>
-          <input type="checkbox" x-model="roles[r]" @change="applyFilters()">
-          <span x-text="roleLabel(r)"></span>
-        </label>
+      <label class="chip" :class="{on: roles[r]}">
+        <input type="checkbox" x-model="roles[r]" @change="applyFilters()">
+        <span x-text="rLabel(r)"></span>
+      </label>
+    </template>
+  </div>
+
+  <div class="vdiv"></div>
+
+  <div class="chips">
+    <label class="chip" :class="{on: fEmail}">
+      <input type="checkbox" x-model="fEmail" @change="applyFilters()">Email
+    </label>
+    <label class="chip" :class="{on: fLink}">
+      <input type="checkbox" x-model="fLink" @change="applyFilters()">Link
+    </label>
+  </div>
+
+  <div class="vdiv"></div>
+
+  <div class="thr">
+    <span>min</span>
+    <input type="number" x-model.number="thresh" @change="applyFilters()" step="0.05" min="0" max="1">
+  </div>
+
+  <div class="topbar-r">
+    <span class="count" x-text="postings.length ? filtered.length + ' / ' + postings.length : 'loading…'"></span>
+    <button class="pal-btn" @click="_openPal()" title="Command palette">Ctrl+K</button>
+  </div>
+</div>
+
+<!-- ── workspace ──────────────────────────────────────────────── -->
+<div id="workspace">
+
+  <!-- list pane -->
+  <div id="list-pane">
+    <div x-show="!postings.length" class="loading">Loading postings…</div>
+
+    <div id="tbl-scroll" x-show="postings.length">
+      <table>
+        <thead>
+          <tr>
+            <th style="min-width:200px;max-width:240px" @click="srt('title')" :class="{sk:sortCol==='title'}">
+              Title <i class="sa" :class="{on:sortCol==='title'}" x-text="arr('title')"></i>
+            </th>
+            <th style="min-width:120px;max-width:150px" @click="srt('org')" :class="{sk:sortCol==='org'}">
+              Org <i class="sa" :class="{on:sortCol==='org'}" x-text="arr('org')"></i>
+            </th>
+            <th style="min-width:90px;max-width:120px" @click="srt('location')" :class="{sk:sortCol==='location'}">
+              Loc <i class="sa" :class="{on:sortCol==='location'}" x-text="arr('location')"></i>
+            </th>
+            <th style="min-width:60px" @click="srt('deadline_iso')" :class="{sk:sortCol==='deadline_iso'}">
+              DL <i class="sa" :class="{on:sortCol==='deadline_iso'}" x-text="arr('deadline_iso')"></i>
+            </th>
+            <th style="min-width:42px" @click="srt('score_resume')" :class="{sk:sortCol==='score_resume'}" title="Resume similarity">
+              Res <i class="sa" :class="{on:sortCol==='score_resume'}" x-text="arr('score_resume')"></i>
+            </th>
+            <template x-for="r in roleList" :key="r">
+              <th style="min-width:40px" @click="srt('score_'+r)" :class="{sk:sortCol==='score_'+r}">
+                <span x-text="rLabel(r)"></span>
+                <i class="sa" :class="{on:sortCol==='score_'+r}" x-text="arr('score_'+r)"></i>
+              </th>
+            </template>
+            <th style="min-width:54px" @click="srt('comp_score')" :class="{sk:sortCol==='comp_score'}">
+              Pay <i class="sa" :class="{on:sortCol==='comp_score'}" x-text="arr('comp_score')"></i>
+            </th>
+            <th style="min-width:28px;text-align:center" @click="srt('openings')" :class="{sk:sortCol==='openings'}">
+              # <i class="sa" :class="{on:sortCol==='openings'}" x-text="arr('openings')"></i>
+            </th>
+            <th style="min-width:70px">ID</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="(p, i) in filtered" :key="p.job_id">
+            <tr @click="sel(p.job_id, i)" :class="{sel: selId===p.job_id}" :id="'r'+p.job_id">
+              <td class="tc" :title="p.title" x-text="p.title"></td>
+              <td class="oc" :title="p.org" x-text="p.org"></td>
+              <td class="lc" x-text="p.location"></td>
+              <td class="dc" :class="{urg: isUrgent(p.deadline_iso)}" x-text="fmtDL(p.deadline_iso)"></td>
+              <td class="sc" :style="scStyle(p.score_resume, true)" x-text="fmtS(p.score_resume)"></td>
+              <template x-for="r in roleList" :key="r">
+                <td class="sc" :style="scStyle(p['score_'+r])" x-text="fmtS(p['score_'+r])"></td>
+              </template>
+              <td class="sc" :style="scStyle(p.comp_score)"
+                  x-text="fmtPay(p.comp_hourly)"
+                  :title="p.comp_hourly != null ? 'est. $'+p.comp_hourly.toFixed(2)+'/hr' : 'not listed'"></td>
+              <td class="nc" x-text="p.openings ?? '—'"></td>
+              <td class="ic" @click.stop="cpId(p.job_id)" :title="'Click to copy'">
+                <span x-text="cpId_=== p.job_id ? '✓' : p.job_id"></span>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+      <template x-if="postings.length && !filtered.length">
+        <div class="empty-list">No postings match the current filters</div>
+      </template>
+    </div>
+  </div>
+
+  <!-- detail pane -->
+  <div id="detail-pane">
+    <template x-if="!selPosting">
+      <div class="dp-empty">
+        <span>No posting selected</span>
+        <span class="hint">Click a row or press <kbd>j</kbd> to begin</span>
+      </div>
+    </template>
+
+    <template x-if="selPosting">
+      <div class="dp">
+
+        <div class="dp-title" x-text="selPosting.title"></div>
+        <div class="dp-meta">
+          <span class="co" x-text="selPosting.org"></span>
+          <span class="dp-sep">·</span>
+          <span x-text="selPosting.location || '—'"></span>
+          <span class="dp-sep">·</span>
+          <span class="dln" :class="{urg: isUrgent(selPosting.deadline_iso)}"
+                x-text="fmtDLFull(selPosting.deadline_iso)"></span>
+          <template x-if="selPosting.comp_hourly">
+            <span class="dp-sep">·</span>
+            <span class="pay-inline" x-text="'$'+selPosting.comp_hourly.toFixed(0)+'/h'"></span>
+          </template>
+        </div>
+
+        <!-- score grid: resume + 7 roles + pay = 9 boxes -->
+        <div class="sg">
+          <div class="sb">
+            <div class="sb-label">Resume</div>
+            <div class="sb-val" :style="scColor(selPosting.score_resume, true)" x-text="fmtS(selPosting.score_resume)"></div>
+          </div>
+          <template x-for="r in roleList" :key="r">
+            <div class="sb">
+              <div class="sb-label" x-text="rLabel(r)"></div>
+              <div class="sb-val" :style="scColor(selPosting['score_'+r])" x-text="fmtS(selPosting['score_'+r])"></div>
+            </div>
+          </template>
+          <div class="sb">
+            <div class="sb-label">Pay</div>
+            <div class="sb-val" :style="scColor(selPosting.comp_score)" x-text="fmtPay(selPosting.comp_hourly)"></div>
+          </div>
+        </div>
+
+        <!-- apply -->
+        <template x-if="selPosting.apply_email || selPosting.apply_link">
+          <div class="apply-row">
+            <span class="apply-lbl">Apply</span>
+            <template x-if="selPosting.apply_email">
+              <a class="apply-val" :href="'mailto:'+selPosting.apply_email" x-text="selPosting.apply_email"></a>
+            </template>
+            <template x-if="selPosting.apply_link && !selPosting.apply_email">
+              <a class="apply-val" :href="selPosting.apply_link" target="_blank" rel="noopener"
+                 x-text="selPosting.apply_link"></a>
+            </template>
+            <template x-if="selPosting.apply_email">
+              <button class="cp-btn" :class="{ok: cpEmail_}"
+                      @click="cpEmail(selPosting.apply_email)"
+                      x-text="cpEmail_ ? '✓ Copied' : 'e'"></button>
+            </template>
+          </div>
+        </template>
+
+        <!-- job ID -->
+        <div class="id-row">
+          <span class="id-lbl">Job ID</span>
+          <span class="id-val" x-text="selPosting.job_id"></span>
+          <button class="cp-btn" :class="{ok: cpId_===selPosting.job_id}"
+                  @click="cpId(selPosting.job_id)"
+                  x-text="cpId_===selPosting.job_id ? '✓' : 'c'"></button>
+        </div>
+
+        <!-- keyword hits -->
+        <template x-if="Object.values(selPosting.keyword_hits||{}).some(v=>v.length)">
+          <div class="sec">
+            <div class="sec-lbl">Matched keywords</div>
+            <div class="kw-chips">
+              <template x-for="[role, hits] in Object.entries(selPosting.keyword_hits||{})" :key="role">
+                <template x-for="kw in hits" :key="kw">
+                  <span class="kw" :class="kwCls(role)">
+                    <span class="kw-r" x-text="rLabel(role)"></span>
+                    <span x-text="kw"></span>
+                  </span>
+                </template>
+              </template>
+            </div>
+          </div>
+        </template>
+
+        <div class="dp-divider"></div>
+
+        <template x-if="selPosting.summary">
+          <div class="sec">
+            <div class="sec-lbl">Summary</div>
+            <div class="sec-txt" x-text="snip(selPosting.summary)"></div>
+          </div>
+        </template>
+
+        <template x-if="selPosting.responsibilities">
+          <div class="sec">
+            <div class="sec-lbl">Responsibilities</div>
+            <div class="sec-txt" x-text="snip(selPosting.responsibilities)"></div>
+          </div>
+        </template>
+
+        <template x-if="selPosting.required_skills">
+          <div class="sec">
+            <div class="sec-lbl">Required Skills</div>
+            <div class="sec-txt" x-text="snip(selPosting.required_skills)"></div>
+          </div>
+        </template>
+
       </div>
     </template>
   </div>
 
-  <div class="threshold-row">
-    min
-    <input type="number" x-model.number="threshold" @change="applyFilters()" step="0.05" min="0" max="1">
-  </div>
-
-  <div class="role-filters">
-    <div class="role-chip" :class="{ active: applyFilter_email }">
-      <label>
-        <input type="checkbox" x-model="applyFilter_email" @change="applyFilters()">
-        Email
-      </label>
-    </div>
-    <div class="role-chip" :class="{ active: applyFilter_link }">
-      <label>
-        <input type="checkbox" x-model="applyFilter_link" @change="applyFilters()">
-        Ext. link
-      </label>
-    </div>
-  </div>
-
-  <span class="count" x-text="postings.length ? `${filtered.length} / ${postings.length}` : 'loading…'"></span>
-</div>
-
-<!-- ── table ────────────────────────────────────────────────── -->
-<div class="table-wrap">
-  <div x-show="!postings.length" class="loading">Loading postings…</div>
-
-  <table x-show="postings.length">
-    <thead>
-      <tr>
-        <th @click="sort('title')"        :class="{sorted: sortCol==='title'}">
-          Title <span class="sort-icon" :class="{on: sortCol==='title'}" x-text="arrow('title')"></span>
-        </th>
-        <th @click="sort('org')"          :class="{sorted: sortCol==='org'}">
-          Org <span class="sort-icon" :class="{on: sortCol==='org'}" x-text="arrow('org')"></span>
-        </th>
-        <th @click="sort('location')"     :class="{sorted: sortCol==='location'}">
-          Location <span class="sort-icon" :class="{on: sortCol==='location'}" x-text="arrow('location')"></span>
-        </th>
-        <th @click="sort('deadline_iso')" :class="{sorted: sortCol==='deadline_iso'}">
-          Deadline <span class="sort-icon" :class="{on: sortCol==='deadline_iso'}" x-text="arrow('deadline_iso')"></span>
-        </th>
-        <th @click="sort('score_resume')" :class="{sorted: sortCol==='score_resume'}">
-          Resume <span class="sort-icon" :class="{on: sortCol==='score_resume'}" x-text="arrow('score_resume')"></span>
-        </th>
-        <template x-for="r in roleList" :key="r">
-          <th @click="sort('score_' + r)" :class="{sorted: sortCol==='score_'+r}">
-            <span x-text="roleLabel(r)"></span>
-            <span class="sort-icon" :class="{on: sortCol==='score_'+r}" x-text="arrow('score_'+r)"></span>
-          </th>
-        </template>
-        <th @click="sort('comp_score')" :class="{sorted: sortCol==='comp_score'}">
-          Pay <span class="sort-icon" :class="{on: sortCol==='comp_score'}" x-text="arrow('comp_score')"></span>
-        </th>
-        <th @click="sort('openings')" :class="{sorted: sortCol==='openings'}">
-          # <span class="sort-icon" :class="{on: sortCol==='openings'}" x-text="arrow('openings')"></span>
-        </th>
-        <th>ID</th>
-      </tr>
-    </thead>
-
-    <!-- one <tbody> per posting so x-for can render two <tr> per item -->
-    <template x-for="p in filtered" :key="p.job_id">
-      <tbody>
-
-        <!-- ── main row ── -->
-        <tr class="data-row">
-          <td class="title" @click="toggle(p.job_id)">
-            <div class="truncate">
-              <span class="expand-icon" x-text="expanded === p.job_id ? '▾' : '▸'"></span>
-              <span class="title-text" x-text="p.title" :title="p.title"></span>
-            </div>
-          </td>
-          <td class="org"><div class="truncate" x-text="p.org" :title="p.org"></div></td>
-          <td class="loc" x-text="p.location"></td>
-          <td class="dl"  x-text="fmtDeadline(p.deadline_iso)" :title="p.deadline"></td>
-          <td class="score" :style="scoreStyle(p.score_resume, true)" x-text="fmtScore(p.score_resume)"></td>
-          <template x-for="r in roleList" :key="r">
-            <td class="score" :style="scoreStyle(p['score_' + r])" x-text="fmtScore(p['score_' + r])"></td>
-          </template>
-          <td class="score pay" :style="scoreStyle(p.comp_score)" x-text="fmtPay(p.comp_hourly)" :title="p.comp_hourly != null ? 'est. $' + p.comp_hourly.toFixed(2) + '/hr' : 'not listed'"></td>
-          <td class="openings" x-text="p.openings ?? '—'"></td>
-          <td class="job-id" @click="copyId(p.job_id)" title="Click to copy" style="cursor:pointer">
-            <span x-text="copiedId === p.job_id ? 'Copied!' : p.job_id"></span>
-          </td>
-        </tr>
-
-        <!-- ── detail row ── -->
-        <tr class="detail-row" x-show="expanded === p.job_id">
-          <td colspan="14">
-            <div class="detail-panel">
-              <template x-if="Object.values(p.keyword_hits || {}).some(v => v.length)">
-                <div class="detail-section">
-                  <div class="detail-label">Matched keywords</div>
-                  <div style="display:flex; flex-wrap:wrap; gap:4px; margin-top:4px">
-                    <template x-for="[role, hits] in Object.entries(p.keyword_hits || {})" :key="role">
-                      <template x-for="kw in hits" :key="kw">
-                        <span class="kw-chip" x-text="kw"></span>
-                      </template>
-                    </template>
-                  </div>
-                </div>
-              </template>
-              <template x-if="p.apply_email || p.apply_link">
-                <div class="detail-section">
-                  <div class="detail-label">Apply</div>
-                  <div class="detail-text">
-                    <template x-if="p.apply_email">
-                      <a :href="'mailto:' + p.apply_email" x-text="p.apply_email" style="color:#1d4ed8"></a>
-                    </template>
-                    <template x-if="p.apply_link">
-                      <a :href="p.apply_link" x-text="p.apply_link" target="_blank" rel="noopener" style="color:#1d4ed8; word-break:break-all"></a>
-                    </template>
-                  </div>
-                </div>
-              </template>
-              <template x-if="p.summary">
-                <div class="detail-section">
-                  <div class="detail-label">Summary</div>
-                  <div class="detail-text" x-text="snippet(p.summary)"></div>
-                </div>
-              </template>
-              <template x-if="p.responsibilities">
-                <div class="detail-section">
-                  <div class="detail-label">Responsibilities</div>
-                  <div class="detail-text" x-text="snippet(p.responsibilities)"></div>
-                </div>
-              </template>
-              <template x-if="p.required_skills">
-                <div class="detail-section">
-                  <div class="detail-label">Required Skills</div>
-                  <div class="detail-text" x-text="snippet(p.required_skills)"></div>
-                </div>
-              </template>
-            </div>
-          </td>
-        </tr>
-
-      </tbody>
-    </template>
-  </table>
 </div>
 
 <script>
@@ -327,103 +652,238 @@ function app() {
     search: '',
     sortCol: 'score_resume',
     sortDir: -1,
-    threshold: 0.1,
-    expanded: null,
+    thresh: 0.10,
+    selId: null,
+    selIdx: -1,
     roleList: ['firmware','embedded','hardware','software','fde','mts','power_electronics'],
     roles: { firmware:false, embedded:false, hardware:false, software:false, fde:false, mts:false, power_electronics:false },
-    applyFilter_email: false,
-    applyFilter_link: false,
-    copiedId: null,
+    fEmail: false,
+    fLink: false,
+    cpId_: null,
+    cpEmail_: false,
+    // palette
+    pal: false,
+    palQ: '',
+    palI: 0,
+    palAll: [],
+    palItems: [],
+
+    get selPosting() {
+      return this.selId ? (this.filtered.find(p => p.job_id === this.selId) ?? null) : null;
+    },
 
     async init() {
-      const res = await fetch('/api/postings');
-      this.postings = await res.json();
+      const r = await fetch('/api/postings');
+      this.postings = await r.json();
       this.applyFilters();
+      this._mkPal();
     },
 
     applyFilters() {
       let rows = this.postings;
-
       const q = this.search.trim().toLowerCase();
-      if (q) {
-        rows = rows.filter(p =>
-          (p.title    || '').toLowerCase().includes(q) ||
-          (p.org      || '').toLowerCase().includes(q) ||
-          (p.location || '').toLowerCase().includes(q)
-        );
-      }
-
+      if (q) rows = rows.filter(p =>
+        (p.title||'').toLowerCase().includes(q) ||
+        (p.org||'').toLowerCase().includes(q) ||
+        (p.location||'').toLowerCase().includes(q)
+      );
       const active = this.roleList.filter(r => this.roles[r]);
       if (active.length) {
-        const t = this.threshold;
-        rows = rows.filter(p => active.some(r => (p['score_' + r] ?? 0) >= t));
+        const t = this.thresh;
+        rows = rows.filter(p => active.some(r => (p['score_'+r]??0) >= t));
       }
-
-      if (this.applyFilter_email || this.applyFilter_link) {
+      if (this.fEmail || this.fLink) {
         rows = rows.filter(p =>
-          (this.applyFilter_email && p.apply_method === 'email') ||
-          (this.applyFilter_link  && p.apply_method === 'link')
+          (this.fEmail && p.apply_method==='email') ||
+          (this.fLink  && p.apply_method==='link')
         );
       }
-
       const col = this.sortCol, dir = this.sortDir;
       this.filtered = [...rows].sort((a, b) => {
         const av = a[col], bv = b[col];
-        if (av == null && bv == null) return 0;
-        if (av == null) return 1;
-        if (bv == null) return -1;
-        return (av < bv ? -1 : av > bv ? 1 : 0) * dir;
+        if (av==null && bv==null) return 0;
+        if (av==null) return 1;
+        if (bv==null) return -1;
+        return (av<bv ? -1 : av>bv ? 1 : 0) * dir;
       });
+      if (this.selId) {
+        this.selIdx = this.filtered.findIndex(p => p.job_id === this.selId);
+      }
     },
 
-    sort(col) {
-      this.sortCol === col ? (this.sortDir *= -1) : (this.sortCol = col, this.sortDir = -1);
+    srt(col) {
+      this.sortCol===col ? (this.sortDir*=-1) : (this.sortCol=col, this.sortDir=-1);
       this.applyFilters();
     },
 
-    toggle(jobId) {
-      this.expanded = this.expanded === jobId ? null : jobId;
+    sel(id, idx) {
+      this.selId = id;
+      this.selIdx = idx ?? this.filtered.findIndex(p => p.job_id===id);
     },
 
-    arrow(col) {
-      if (this.sortCol !== col) return '↕';
-      return this.sortDir === -1 ? '↓' : '↑';
+    arr(col) {
+      if (this.sortCol!==col) return '↕';
+      return this.sortDir===-1 ? '↓' : '↑';
     },
 
-    scoreStyle(val, isResume = false) {
-      if (val == null) return 'background:#f8fafc; color:#cbd5e1';
-      const n = isResume ? Math.min(val / 0.32, 1) : val;
-      const s = Math.round(n * 75);
-      const l = Math.round(96 - n * 28);
-      return `background:hsl(142,${s}%,${l}%); color:${n > 0.55 ? '#14532d' : '#334155'}`;
+    onKey(e) {
+      // ⌘K / Ctrl+K — always fires
+      if ((e.metaKey||e.ctrlKey) && e.key==='k') {
+        e.preventDefault(); this._openPal(); return;
+      }
+
+      // palette mode
+      if (this.pal) {
+        if (e.key==='Escape')    { e.preventDefault(); this.pal=false; }
+        if (e.key==='ArrowUp')   { e.preventDefault(); this.palI=Math.max(0,this.palI-1); }
+        if (e.key==='ArrowDown') { e.preventDefault(); this.palI=Math.min(this.palItems.length-1,this.palI+1); }
+        if (e.key==='Enter')     { e.preventDefault(); this.palExec(this.palItems[this.palI]); }
+        return;
+      }
+
+      const inInput = ['INPUT','TEXTAREA'].includes(document.activeElement?.tagName);
+      const inSrch  = document.activeElement===this.$refs.srch;
+
+      if (!inInput && e.key==='/') {
+        e.preventDefault(); this.$refs.srch.focus(); return;
+      }
+      if (inSrch && e.key==='Escape') {
+        this.$refs.srch.blur(); return;
+      }
+      if (inInput) return;
+
+      if (e.key==='j') { e.preventDefault(); this._nav(1); }
+      if (e.key==='k') { e.preventDefault(); this._nav(-1); }
+      if (e.key==='c' && this.selId) this.cpId(this.selId);
+      if (e.key==='e' && this.selPosting?.apply_email) this.cpEmail(this.selPosting.apply_email);
+      if (e.key==='S') { e.preventDefault(); this.srt('score_resume'); }   // shift+s
+      if (e.key==='P') { e.preventDefault(); this.srt('comp_score'); }     // shift+p
     },
 
-    fmtScore(val) { return val == null ? '—' : val.toFixed(2); },
-
-    fmtPay(hourly) {
-      if (hourly == null) return '—';
-      return '$' + hourly.toFixed(0) + '/h';
+    _nav(delta) {
+      if (!this.filtered.length) return;
+      const next = Math.max(0, Math.min(this.filtered.length-1, this.selIdx+delta));
+      const p = this.filtered[next];
+      if (!p) return;
+      this.selId = p.job_id;
+      this.selIdx = next;
+      this.$nextTick(() => {
+        document.getElementById('r'+p.job_id)?.scrollIntoView({block:'nearest', behavior:'smooth'});
+      });
     },
 
-    fmtDeadline(iso) {
-      if (!iso) return '—';
-      return new Date(iso).toLocaleDateString('en-CA', { month:'short', day:'numeric', timeZone:'UTC' });
-    },
-
-    roleLabel(r) {
-      return { firmware:'FW', embedded:'EM', hardware:'HW', software:'SW',
-               fde:'FDE', mts:'MTS', power_electronics:'PWR' }[r] || r;
-    },
-
-    snippet(text) {
-      if (!text) return '';
-      return text.replace(/\n{3,}/g, '\n\n').trim();
-    },
-
-    copyId(id) {
+    cpId(id) {
       navigator.clipboard.writeText(id);
-      this.copiedId = id;
-      setTimeout(() => { this.copiedId = null; }, 1500);
+      this.cpId_ = id;
+      setTimeout(() => { this.cpId_ = null; }, 1500);
+    },
+
+    cpEmail(em) {
+      navigator.clipboard.writeText(em);
+      this.cpEmail_ = true;
+      setTimeout(() => { this.cpEmail_ = false; }, 1500);
+    },
+
+    // ── palette ────────────────────────────────────────────────
+    _mkPal() {
+      const s = (col) => () => this.srt(col);
+      const f = (fn)  => () => { fn(); this.applyFilters(); };
+      this.palAll = [
+        {id:'sr',  cat:'sort',   label:'Sort by Resume score',         fn: s('score_resume')},
+        {id:'sp',  cat:'sort',   label:'Sort by Pay',                  fn: s('comp_score')},
+        {id:'sdl', cat:'sort',   label:'Sort by Deadline',             fn: s('deadline_iso')},
+        {id:'sfw', cat:'sort',   label:'Sort by Firmware score',       fn: s('score_firmware')},
+        {id:'sem', cat:'sort',   label:'Sort by Embedded score',       fn: s('score_embedded')},
+        {id:'shw', cat:'sort',   label:'Sort by Hardware score',       fn: s('score_hardware')},
+        {id:'ssw', cat:'sort',   label:'Sort by Software score',       fn: s('score_software')},
+        {id:'spw', cat:'sort',   label:'Sort by Power Electronics',    fn: s('score_power_electronics')},
+        {id:'ffe', cat:'filter', label:'Toggle Email filter',          fn: f(() => this.fEmail=!this.fEmail)},
+        {id:'ffl', cat:'filter', label:'Toggle Link filter',           fn: f(() => this.fLink=!this.fLink)},
+        {id:'ffw', cat:'filter', label:'Toggle Firmware filter',       fn: f(() => this.roles.firmware=!this.roles.firmware)},
+        {id:'fem', cat:'filter', label:'Toggle Embedded filter',       fn: f(() => this.roles.embedded=!this.roles.embedded)},
+        {id:'fhw', cat:'filter', label:'Toggle Hardware filter',       fn: f(() => this.roles.hardware=!this.roles.hardware)},
+        {id:'fsw', cat:'filter', label:'Toggle Software filter',       fn: f(() => this.roles.software=!this.roles.software)},
+        {id:'cid', cat:'copy',   label:'Copy selected job ID',         fn: () => { if (this.selId) this.cpId(this.selId); }},
+        {id:'cem', cat:'copy',   label:'Copy apply email',             fn: () => { if (this.selPosting?.apply_email) this.cpEmail(this.selPosting.apply_email); }},
+        {id:'clr', cat:'filter', label:'Clear all filters',            fn: f(() => { this.roleList.forEach(r=>this.roles[r]=false); this.fEmail=false; this.fLink=false; })},
+        {id:'cls', cat:'search', label:'Clear search',                 fn: f(() => { this.search=''; })},
+        // keyboard shortcut reference — functional too
+        {id:'kj',  cat:'keys',   label:'j  —  next posting',           fn: () => this._nav(1)},
+        {id:'kk',  cat:'keys',   label:'k  —  previous posting',       fn: () => this._nav(-1)},
+        {id:'ks',  cat:'keys',   label:'/  —  focus search',           fn: () => this.$refs.srch.focus()},
+        {id:'kc',  cat:'keys',   label:'c  —  copy job ID',            fn: () => { if (this.selId) this.cpId(this.selId); }},
+        {id:'ke',  cat:'keys',   label:'e  —  copy apply email',       fn: () => { if (this.selPosting?.apply_email) this.cpEmail(this.selPosting.apply_email); }},
+        {id:'kS',  cat:'keys',   label:'Shift+S  —  sort by resume score',  fn: () => this.srt('score_resume')},
+        {id:'kP',  cat:'keys',   label:'Shift+P  —  sort by pay',           fn: () => this.srt('comp_score')},
+      ];
+      this.palItems = [...this.palAll];
+    },
+
+    _openPal() {
+      this.pal = true; this.palQ = ''; this.palI = 0;
+      this.palItems = [...this.palAll];
+      this.$nextTick(() => this.$refs.palIn?.focus());
+    },
+
+    palFilt() {
+      const q = this.palQ.toLowerCase();
+      this.palItems = q ? this.palAll.filter(i => i.label.toLowerCase().includes(q)) : [...this.palAll];
+      this.palI = 0;
+    },
+
+    palExec(item) {
+      if (!item) return;
+      this.pal = false;
+      item.fn();
+    },
+
+    // ── formatting ─────────────────────────────────────────────
+    scStyle(val, isResume=false) {
+      if (val==null) return 'color:var(--tx3)';
+      const n = isResume ? Math.min(val/0.32, 1) : val;
+      if (n < 0.15) return 'color:var(--tx3)';
+      if (n < 0.40) return 'color:#6b7280';
+      if (n < 0.65) return 'color:hsl(142,48%,52%);background:rgba(34,197,94,.06)';
+      return 'color:hsl(142,68%,58%);background:rgba(34,197,94,.11)';
+    },
+
+    scColor(val, isResume=false) { return this.scStyle(val, isResume); },
+
+    fmtS(val) { return val==null ? '—' : val.toFixed(2); },
+
+    fmtPay(h) {
+      if (h==null) return '—';
+      return '$'+h.toFixed(0)+'/h';
+    },
+
+    fmtDL(iso) {
+      if (!iso) return '—';
+      return new Date(iso+'T00:00:00Z').toLocaleDateString('en-CA',{month:'short',day:'numeric',timeZone:'UTC'});
+    },
+
+    fmtDLFull(iso) {
+      if (!iso) return '—';
+      return new Date(iso+'T00:00:00Z').toLocaleDateString('en-CA',{month:'short',day:'numeric',year:'numeric',timeZone:'UTC'});
+    },
+
+    isUrgent(iso) {
+      if (!iso) return false;
+      const d = (new Date(iso+'T00:00:00Z') - Date.now()) / 86400000;
+      return d >= 0 && d <= 3;
+    },
+
+    rLabel(r) {
+      return {firmware:'FW',embedded:'EM',hardware:'HW',software:'SW',
+              fde:'FDE',mts:'MTS',power_electronics:'PWR'}[r] || r;
+    },
+
+    kwCls(role) {
+      return {firmware:'kw-fw',embedded:'kw-em',hardware:'kw-hw',software:'kw-sw',
+              fde:'kw-fde',mts:'kw-mts',power_electronics:'kw-pwr'}[role] || '';
+    },
+
+    snip(txt) {
+      return txt ? txt.replace(/\n{3,}/g,'\n\n').trim() : '';
     },
   };
 }
