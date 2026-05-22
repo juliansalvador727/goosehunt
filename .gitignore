@@ -1,0 +1,20 @@
+# virtualenv
+.venv/
+
+# persistent browser profile (contains session cookies / credentials)
+scraper/profile/
+
+# scraped data
+data/
+
+# resume (personal)
+resume.pdf
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
