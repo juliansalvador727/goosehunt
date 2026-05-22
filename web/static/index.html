@@ -435,7 +435,8 @@
 
   <div class="vdiv"></div>
 
-  <div class="chips">
+  <div class="chips" style="align-items:center">
+    <span style="font-size:11px;color:var(--tx3);white-space:nowrap">Apply by</span>
     <label class="chip" :class="{on: fEmail}">
       <input type="checkbox" x-model="fEmail" @change="applyFilters()">Email
     </label>
@@ -858,17 +859,17 @@ function app() {
 
     fmtDL(iso) {
       if (!iso) return '—';
-      return new Date(iso+'T00:00:00Z').toLocaleDateString('en-CA',{month:'short',day:'numeric',timeZone:'UTC'});
+      return new Date(iso).toLocaleDateString('en-CA',{month:'short',day:'numeric'});
     },
 
     fmtDLFull(iso) {
       if (!iso) return '—';
-      return new Date(iso+'T00:00:00Z').toLocaleDateString('en-CA',{month:'short',day:'numeric',year:'numeric',timeZone:'UTC'});
+      return new Date(iso).toLocaleDateString('en-CA',{month:'short',day:'numeric',year:'numeric'});
     },
 
     isUrgent(iso) {
       if (!iso) return false;
-      const d = (new Date(iso+'T00:00:00Z') - Date.now()) / 86400000;
+      const d = (new Date(iso) - Date.now()) / 86400000;
       return d >= 0 && d <= 3;
     },
 
