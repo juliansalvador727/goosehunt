@@ -120,14 +120,15 @@ All calls go through `page.evaluate()` — no new tabs are opened.
 
 ```
 make install     # create venv (uv), install deps, playwright install chromium
-make scrape      # run scraper → data/postings.jsonl
+make run         # scrape + pipeline + serve (full end-to-end)
+make scrape      # scrape only → data/postings.jsonl
+make pipeline    # ingest → embed → score (run after scrape)
+make serve       # start FastAPI on localhost:8000
 make scrape-diag # inspect page state, fetch one posting, write data/diag.md
 make test        # run unit tests (no browser)
-make ingest      # ingest JSONL → SQLite
-make embed       # embed postings → BLOB column
-make score       # run classifier + resume scorer
-make serve       # start FastAPI on localhost:8000
 ```
+
+Individual pipeline steps are still available as `make ingest`, `make embed`, `make score`.
 
 ---
 
@@ -144,9 +145,20 @@ make install
 cp /path/to/resume.pdf resume.pdf
 
 # first run: browser opens, you log in, navigate to Employer Direct, press Enter
-make scrape
-make ingest && make embed && make score
+# then the pipeline runs automatically and the UI starts
+make run
+```
+
+On subsequent runs where you just want to re-serve existing data:
+
+```bash
 make serve
+```
+
+Or re-scrape and reprocess without restarting the server:
+
+```bash
+make scrape && make pipeline
 ```
 
 On first run, a Chromium window opens. Log in (Duo if prompted), navigate to the Employer Direct board, wait for job listings to appear, then press Enter in the terminal.

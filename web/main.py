@@ -162,8 +162,19 @@ def extract_comp_hourly(raw_json: str) -> float | None:
     if not text or len(text) < 4:
         return None
 
+    # Hardcoded currency conversion — HKD figures are not CAD
+    _HKD_TO_CAD = 0.175
+    is_hkd = text.upper().startswith("HKD") or " HKD" in text.upper()
+
     tl = text.lower()
 
+    hourly = _extract_hourly_raw(text, tl)
+    if hourly is None:
+        return None
+    return hourly * _HKD_TO_CAD if is_hkd else hourly
+
+
+def _extract_hourly_raw(text: str, tl: str) -> float | None:
     # Try hourly first — most common for co-op
     v = _first(_HOURLY_RE, text)
     if v and 10 <= v <= 300:
@@ -244,11 +255,15 @@ def extract_apply_info(raw_json: str) -> dict:
 
     delivery = (d.get("Application Delivery") or "").lower()
     email = (d.get("If By Email, Send To") or "").strip()
+    website = (d.get("If By Website, Go To") or "").strip()
     add_info = d.get("Additional Application Information") or ""
 
-    # Pull first URL out of additional info
-    m = _URL_RE.search(add_info)
-    link = m.group(0).rstrip(".,)") if m else None
+    # Explicit website field takes priority, then hunt for a URL in additional info
+    if website:
+        link = website.rstrip(".,)")
+    else:
+        m = _URL_RE.search(add_info)
+        link = m.group(0).rstrip(".,)") if m else None
 
     if "email" in delivery or email:
         method = "email"
@@ -260,7 +275,7 @@ def extract_apply_info(raw_json: str) -> dict:
     return {
         "apply_method": method,
         "apply_email": email or None,
-        "apply_link": link,
+        "apply_link": link or None,
     }
 
 

@@ -83,7 +83,6 @@ hardware:
     - synthesis
     - place and route
     - power electronics
-    - RF
     - hardware design
     - electronics
     - PCB layout
