@@ -119,8 +119,8 @@ make scrape-diag # inspect page state, fetch one posting, write data/diag.md
 make test        # run unit tests (no browser)
 make ingest      # ingest JSONL → SQLite
 make embed       # embed postings → BLOB column
-make score       # run classifier + resume scorer  (not yet implemented)
-make serve       # start FastAPI on localhost:8000  (not yet implemented)
+make score       # run classifier + resume scorer
+make serve       # start FastAPI on localhost:8000
 ```
 
 ---
@@ -147,7 +147,7 @@ On first run, a Chromium window opens. Log in (Duo if prompted), navigate to the
 - [x] Scraper → JSONL (end-to-end verified)
 - [x] SQLite schema + JSONL ingestion
 - [x] Posting embedding pipeline (sentence-transformers → BLOB column)
-- [ ] Keyword classifier with YAML config
-- [ ] Resume parser + cosine-sim scorer
-- [ ] FastAPI + Alpine.js UI
-- [ ] Makefile wiring everything together
+- [x] Keyword classifier with YAML config
+- [x] Resume parser + cosine-sim scorer
+- [x] FastAPI + Alpine.js UI
+- [x] Makefile wiring everything together

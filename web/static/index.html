@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>goosehunt</title>
+  <script defer src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 13px;
+      background: #f0f2f5;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── header ─────────────────────────────────────────────── */
+    #header {
+      flex-shrink: 0;
+      background: #1e293b;
+      color: #e2e8f0;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    #header h1 { font-size: 15px; font-weight: 700; letter-spacing: 0.5px; color: #f1f5f9; }
+
+    input[type=search] {
+      padding: 5px 10px;
+      border: 1px solid #475569;
+      border-radius: 5px;
+      font-size: 13px;
+      width: 230px;
+      background: #0f172a;
+      color: #e2e8f0;
+    }
+    input[type=search]::placeholder { color: #64748b; }
+    input[type=search]:focus { outline: none; border-color: #60a5fa; }
+
+    .role-filters { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    .role-chip label {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 9px;
+      border: 1px solid #475569;
+      border-radius: 12px;
+      cursor: pointer;
+      user-select: none;
+      color: #94a3b8;
+      transition: background 0.1s, color 0.1s;
+    }
+    .role-chip label:hover { border-color: #60a5fa; color: #e2e8f0; }
+    .role-chip input { display: none; }
+    .role-chip.active label { background: #1d4ed8; border-color: #3b82f6; color: #fff; font-weight: 600; }
+
+    .threshold-row { display: flex; align-items: center; gap: 6px; color: #94a3b8; font-size: 12px; }
+    input[type=number] {
+      width: 52px;
+      padding: 3px 6px;
+      border: 1px solid #475569;
+      border-radius: 4px;
+      background: #0f172a;
+      color: #e2e8f0;
+      font-size: 12px;
+    }
+    input[type=number]:focus { outline: none; border-color: #60a5fa; }
+
+    .count { margin-left: auto; color: #64748b; font-size: 12px; white-space: nowrap; }
+
+    /* ── table ───────────────────────────────────────────────── */
+    .table-wrap { flex: 1; overflow: auto; background: #fff; }
+
+    table { width: 100%; border-collapse: collapse; }
+
+    thead th {
+      position: sticky;
+      top: 0;
+      background: #f8fafc;
+      border-bottom: 2px solid #e2e8f0;
+      padding: 7px 10px;
+      text-align: left;
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+      font-weight: 600;
+      color: #475569;
+      font-size: 12px;
+    }
+    thead th:hover { background: #f1f5f9; color: #1e293b; }
+    thead th.sorted { background: #eff6ff; color: #1d4ed8; }
+
+    tbody tr { border-bottom: 1px solid #f1f5f9; }
+    tbody tr:hover { background: #f8fafc; }
+
+    td { padding: 6px 10px; vertical-align: middle; }
+    td.title { font-weight: 500; color: #1e293b; max-width: 280px; }
+    td.org   { color: #475569; max-width: 180px; }
+    td.loc   { color: #64748b; white-space: nowrap; }
+    td.dl    { white-space: nowrap; color: #64748b; }
+    td.score {
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+      font-size: 12px;
+      min-width: 48px;
+    }
+    td.openings { text-align: center; color: #64748b; }
+    td.job-id   { font-family: monospace; font-size: 11px; color: #94a3b8; white-space: nowrap; }
+
+    .sort-icon { opacity: 0.35; margin-left: 2px; }
+    .sort-icon.on { opacity: 1; }
+
+    .loading { padding: 40px; text-align: center; color: #94a3b8; }
+    .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  </style>
+</head>
+
+<body x-data="app()" x-init="init()">
+
+<!-- ── header ───────────────────────────────────────────────── -->
+<div id="header">
+  <h1>goosehunt</h1>
+
+  <input type="search" x-model="search" @input="applyFilters()" placeholder="search title, org, location…">
+
+  <div class="role-filters">
+    <template x-for="r in roleList" :key="r">
+      <div class="role-chip" :class="{ active: roles[r] }">
+        <label>
+          <input type="checkbox" x-model="roles[r]" @change="applyFilters()">
+          <span x-text="roleLabel(r)"></span>
+        </label>
+      </div>
+    </template>
+  </div>
+
+  <div class="threshold-row">
+    min
+    <input type="number" x-model.number="threshold" @change="applyFilters()" step="0.05" min="0" max="1">
+  </div>
+
+  <span class="count" x-text="postings.length ? `${filtered.length} / ${postings.length}` : 'loading…'"></span>
+</div>
+
+<!-- ── table ────────────────────────────────────────────────── -->
+<div class="table-wrap">
+  <div x-show="!postings.length" class="loading">Loading postings…</div>
+
+  <table x-show="postings.length">
+    <thead>
+      <tr>
+        <th @click="sort('title')"    :class="{sorted: sortCol==='title'}">
+          Title <span class="sort-icon" :class="{on: sortCol==='title'}" x-text="arrow('title')"></span>
+        </th>
+        <th @click="sort('org')"      :class="{sorted: sortCol==='org'}">
+          Org <span class="sort-icon" :class="{on: sortCol==='org'}" x-text="arrow('org')"></span>
+        </th>
+        <th @click="sort('location')" :class="{sorted: sortCol==='location'}">
+          Location <span class="sort-icon" :class="{on: sortCol==='location'}" x-text="arrow('location')"></span>
+        </th>
+        <th @click="sort('deadline_iso')" :class="{sorted: sortCol==='deadline_iso'}">
+          Deadline <span class="sort-icon" :class="{on: sortCol==='deadline_iso'}" x-text="arrow('deadline_iso')"></span>
+        </th>
+        <th @click="sort('score_resume')" :class="{sorted: sortCol==='score_resume'}">
+          Resume ↕ <span class="sort-icon" :class="{on: sortCol==='score_resume'}" x-text="arrow('score_resume')"></span>
+        </th>
+        <template x-for="r in roleList" :key="r">
+          <th @click="sort('score_' + r)" :class="{sorted: sortCol==='score_'+r}">
+            <span x-text="roleLabel(r)"></span>
+            <span class="sort-icon" :class="{on: sortCol==='score_'+r}" x-text="arrow('score_'+r)"></span>
+          </th>
+        </template>
+        <th @click="sort('openings')" :class="{sorted: sortCol==='openings'}">
+          # <span class="sort-icon" :class="{on: sortCol==='openings'}" x-text="arrow('openings')"></span>
+        </th>
+        <th>ID</th>
+      </tr>
+    </thead>
+    <tbody>
+      <template x-for="p in filtered" :key="p.job_id">
+        <tr>
+          <td class="title"><div class="truncate" x-text="p.title" :title="p.title"></div></td>
+          <td class="org">  <div class="truncate" x-text="p.org"   :title="p.org"></div></td>
+          <td class="loc"   x-text="p.location"></td>
+          <td class="dl"    x-text="fmtDeadline(p.deadline_iso)" :title="p.deadline"></td>
+          <td class="score" :style="scoreStyle(p.score_resume, true)"  x-text="fmtScore(p.score_resume)"></td>
+          <template x-for="r in roleList" :key="r">
+            <td class="score" :style="scoreStyle(p['score_' + r])" x-text="fmtScore(p['score_' + r])"></td>
+          </template>
+          <td class="openings" x-text="p.openings ?? '—'"></td>
+          <td class="job-id"   x-text="p.job_id"></td>
+        </tr>
+      </template>
+    </tbody>
+  </table>
+</div>
+
+<script>
+function app() {
+  return {
+    postings: [],
+    filtered: [],
+    search: '',
+    sortCol: 'score_resume',
+    sortDir: -1,
+    threshold: 0.1,
+    roleList: ['firmware','embedded','hardware','software','fde','mts','power_electronics'],
+    roles: { firmware:false, embedded:false, hardware:false, software:false, fde:false, mts:false, power_electronics:false },
+
+    async init() {
+      const res = await fetch('/api/postings');
+      this.postings = await res.json();
+      this.applyFilters();
+    },
+
+    applyFilters() {
+      let rows = this.postings;
+
+      const q = this.search.trim().toLowerCase();
+      if (q) {
+        rows = rows.filter(p =>
+          (p.title    || '').toLowerCase().includes(q) ||
+          (p.org      || '').toLowerCase().includes(q) ||
+          (p.location || '').toLowerCase().includes(q)
+        );
+      }
+
+      const active = this.roleList.filter(r => this.roles[r]);
+      if (active.length) {
+        const t = this.threshold;
+        rows = rows.filter(p => active.some(r => (p['score_' + r] ?? 0) >= t));
+      }
+
+      const col = this.sortCol, dir = this.sortDir;
+      this.filtered = [...rows].sort((a, b) => {
+        const av = a[col], bv = b[col];
+        if (av == null && bv == null) return 0;
+        if (av == null) return 1;   // nulls always last
+        if (bv == null) return -1;
+        return (av < bv ? -1 : av > bv ? 1 : 0) * dir;
+      });
+    },
+
+    sort(col) {
+      this.sortCol === col ? (this.sortDir *= -1) : (this.sortCol = col, this.sortDir = -1);
+      this.applyFilters();
+    },
+
+    arrow(col) {
+      if (this.sortCol !== col) return '↕';
+      return this.sortDir === -1 ? '↓' : '↑';
+    },
+
+    // resume scores top out ~0.30; role scores are 0-1. normalize separately for colour.
+    scoreStyle(val, isResume = false) {
+      if (val == null) return 'background:#f8fafc; color:#cbd5e1';
+      const n = isResume ? Math.min(val / 0.32, 1) : val;
+      const s = Math.round(n * 75);
+      const l = Math.round(96 - n * 28);
+      return `background:hsl(142,${s}%,${l}%); color:${n > 0.55 ? '#14532d' : '#334155'}`;
+    },
+
+    fmtScore(val) { return val == null ? '—' : val.toFixed(2); },
+
+    fmtDeadline(iso) {
+      if (!iso) return '—';
+      return new Date(iso).toLocaleDateString('en-CA', { month:'short', day:'numeric', timeZone:'UTC' });
+    },
+
+    roleLabel(r) {
+      return { firmware:'FW', embedded:'EM', hardware:'HW', software:'SW',
+               fde:'FDE', mts:'MTS', power_electronics:'PWR' }[r] || r;
+    },
+  };
+}
+</script>
+</body>
+</html>
