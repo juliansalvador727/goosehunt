@@ -8,16 +8,16 @@ Personal WaterlooWorks co-op posting aggregator. Scrapes the Employer Direct boa
 
 ## What it does
 
-1. **Scrapes** all postings from the Employer Direct board using Playwright with a persistent browser profile (you log in once, Duo once, then leave it alone).
+1. **Scrapes** the currently visible Employer Direct results using Playwright with a persistent browser profile. You log in manually, set filters/work term in WaterlooWorks, then press Enter.
 2. **Stores** every posting in a local SQLite database — resumable, so a crashed scrape picks up where it left off.
 3. **Classifies** each posting against four target roles using tunable keyword lists in `config/roles.yaml`.
 4. **Scores** each posting against your resume PDF using cosine similarity on sentence embeddings.
-5. **Parses compensation** from each posting's free-text pay field and normalizes it to an estimated hourly rate.
-6. **Serves** a local web UI — one page, every posting loaded, client-side sort/filter, no build step.
+5. **Enriches API responses** with parsed compensation, application method/contact, and matched keyword hits.
+6. **Serves** a local web UI — one page, every posting loaded, client-side sort/filter, keyboard navigation, no build step.
 
 ---
 
-## Score columns
+## Score fields
 
 | Column           | What it measures                          |
 |------------------|-------------------------------------------|
@@ -28,7 +28,7 @@ Personal WaterlooWorks co-op posting aggregator. Scrapes the Employer Direct boa
 | `score_resume`   | Resume cosine similarity                  |
 | `comp_score`     | Estimated pay, normalized to [0, 1]      |
 
-All `score_*` values are in [0, 1]. `comp_score` normalizes estimated hourly pay: $16/hr → 0.0, $60/hr → 1.0.
+All `score_*` values are stored in SQLite and are in [0, 1]. `comp_score` is API-only and normalizes estimated hourly pay: $16/hr → 0.0, $60/hr → 1.0.
 
 ---
 
@@ -105,7 +105,7 @@ CREATE TABLE postings (
 
 ## Scraper design
 
-The scraper uses WaterlooWorks' own in-page JavaScript API (no tab navigation, no HTML scraping of the listing page):
+The scraper uses WaterlooWorks' own in-page JavaScript API from the page you manually prepare:
 
 1. Extract the `dataParams.action` key embedded in the page's `<script>` tags.
 2. POST to the listing endpoint (`isDataViewer: true`) with 100 results per page — returns JSON rows with numeric job IDs.
@@ -128,7 +128,7 @@ make scrape-diag # inspect page state, fetch one posting, write data/diag.md
 make test        # run unit tests (no browser)
 ```
 
-Individual pipeline steps are still available as `make ingest`, `make embed`, `make score`.
+Individual pipeline steps are available as `make ingest`, `make embed`, and `make score`. `make score` runs both the keyword scorer and the resume-similarity scorer.
 
 ---
 
@@ -163,6 +163,8 @@ make scrape && make pipeline
 
 On first run, a Chromium window opens. Log in (Duo if prompted), navigate to the Employer Direct board, wait for job listings to appear, then press Enter in the terminal.
 
+The scraper starts from the filters currently visible in WaterlooWorks. Set the work term and any board filters before pressing Enter.
+
 ### Docker (any device, no Python setup)
 
 Scraping must still run locally (needs your WaterlooWorks session). Everything after that runs in the container.
@@ -179,20 +181,24 @@ docker compose up
 
 ---
 
-## Build order (incremental)
+## Current UI
 
-- [x] README
-- [x] Scraper → JSONL (end-to-end verified)
-- [x] SQLite schema + JSONL ingestion
-- [x] Posting embedding pipeline (sentence-transformers → BLOB column)
-- [x] Keyword classifier with YAML config
-- [x] Resume parser + cosine-sim scorer
-- [x] FastAPI + Alpine.js UI
-- [x] Makefile wiring everything together
-- [x] Compensation parsing + sortable Pay column in UI
-- [x] pip → uv migration (faster installs)
-- [x] Application method detection (email vs external link) + filter chips
-- [x] Keyword hit display in detail panel
-- [x] Job ID click-to-copy
-- [x] UI redesign: dark mode, two-pane layout, keyboard navigation, command palette
-- [x] Role consolidation: SWE, AI/ML, FW, HW
+The UI lives in `web/static/index.html` and is served by FastAPI from `web/main.py`.
+
+- Board dropdown: currently useful for Employer Direct data; the scraper writes `board_type = "direct"`.
+- Filters: search, role chips (`SWE`, `AI/ML`, `FW`, `HW`), and apply-by chips (`Email`, `Link`).
+- Default apply filter: Email and Link are enabled; WaterlooWorks-only postings (`apply_method = "ww"`) are intentionally hidden unless the UI is changed to expose that method.
+- Table: sortable title/org/location/deadline/resume/role/pay/openings columns, click-to-copy job IDs.
+- Detail panel: score grid, apply link/email, copy buttons, keyword-hit chips, summary/responsibilities/required skills.
+- Keyboard: `j`/`k` navigate, `/` focuses search, `c` copies job ID, `e` copies email, `Shift+S` sorts by resume, `Shift+P` sorts by pay, `Ctrl+K` opens the command palette.
+
+---
+
+## Current status
+
+- Scraper → JSONL: implemented for Employer Direct, headed Playwright, persistent local profile.
+- Ingest → SQLite: implemented with idempotent insert/update/skip behavior.
+- Embeddings: implemented with local `all-MiniLM-L6-v2`, stored as SQLite BLOBs.
+- Scoring: implemented for four role keyword scores plus resume cosine similarity.
+- API/UI: implemented with FastAPI + Alpine.js, request-time compensation/apply/keyword enrichment.
+- Docker: implemented for pipeline + serving only; scraping still runs locally.

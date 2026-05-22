@@ -1,6 +1,6 @@
 # Design Notes — goosehunt
 
-Decisions, tradeoffs, and implementation notes for each component. Updated as we build.
+Decisions, tradeoffs, and implementation notes for the current implementation.
 
 ---
 
@@ -68,6 +68,8 @@ FIELD_MAP = {
 ### Resumability
 
 `data/postings.jsonl` is append-only. On each run `load_done()` reads all existing job IDs from it; any ID already present is skipped. A crashed scrape loses at most one posting.
+
+The scraper starts from the currently visible WaterlooWorks listing page. Work term, board, and any other WW filters must be set manually before pressing Enter.
 
 ### Politeness
 
@@ -146,7 +148,7 @@ If we change the model or the input text strategy, we need to re-embed everythin
 
 ### Why not pgvector / FAISS / chromadb
 
-- 375 rows × 384 dims = <1MB in memory. Exact cosine similarity is a single numpy matmul, ~5ms.
+- A WaterlooWorks term is small enough that all 384-dim posting embeddings fit comfortably in memory. Exact cosine similarity is a single numpy matmul.
 - HNSW or IVFFlat indexes are overhead at this scale, not speedup. They exist for million-row corpora where O(N) is too slow.
 - One source of truth: no Postgres instance, no separate vector-store service, no migrations. The whole thing is a `.db` file.
 
@@ -258,11 +260,11 @@ Three enrichment passes run over each row before it's returned:
 
 Result is `comp_hourly` (est. $/hr). `comp_score` normalizes to [0, 1]: $16/hr → 0.0, $60/hr → 1.0.
 
-**Application method detection** — inspects `Application Delivery`, `If By Email, Send To`, and `Additional Application Information` fields from `raw_fields_json`:
+**Application method detection** — inspects `Application Delivery`, `If By Email, Send To`, `If By Website, Go To`, and `Additional Application Information` fields from `raw_fields_json`:
 
 - `apply_method`: `"email"` if delivery is by email or an email address is present; `"link"` if delivery is by website or a URL is found in additional info; `"ww"` otherwise (apply through WaterlooWorks only).
-- `apply_email`: extracted email address, or null.
-- `apply_link`: first `https://` URL found in additional application info, or null.
+- `apply_email`: value of the `If By Email, Send To` field, or null.
+- `apply_link`: explicit website field first, otherwise the first `http(s)://` URL found in additional application info, or null.
 
 **Keyword hit extraction** — `config/roles.yaml` is loaded once at startup. For each posting, the concatenated text is scanned for each role's keyword list. Returns `keyword_hits`: a dict mapping each role to the list of keywords that matched.
 
@@ -272,9 +274,10 @@ Two-pane layout: compact sortable table on the left, sticky detail panel on the 
 
 **Header controls:**
 
+- Board dropdown: `Employer Direct` and `Full Cycle` options exist in the UI model, but only `Employer Direct` is populated by the current scraper (`board_type = "direct"`).
 - Search box: instant client-side filter on title, org, location, summary, responsibilities, required skills, and job ID.
 - Role chips (SWE, AI/ML, FW, HW): toggle to show only postings with a non-zero score for that role. Multiple roles are OR'd.
-- Apply by chips (Email, Link): filter to postings that require applying by email or external URL. Stacks with role filters.
+- Apply by chips (Email, Link): filter to postings that require applying by email or external URL. Stacks with role filters. Both are enabled by default, so `apply_method = "ww"` postings are hidden in the current UI.
 - Posting count: shows `filtered / total`.
 - Ctrl+K button: opens the command palette.
 
@@ -303,6 +306,7 @@ Two-pane layout: compact sortable table on the left, sticky detail panel on the 
 - Title, company, location, deadline, pay in the header.
 - Score grid: one box per role + resume + pay, color-coded.
 - Apply row with one-click copy for email jobs or direct link for external applications.
+- WaterlooWorks-only postings, if surfaced by changing filters/UI, link back to the Employer Direct jobs page.
 - Role-labeled keyword chips showing exactly which keywords fired and for which role.
 - Scrollable summary, responsibilities, and required skills sections.
 
@@ -368,9 +372,9 @@ localhost:8000          ← FastAPI + Alpine.js UI
 | --------------------------------------- | ---------------------------------------------------------------------------------- |
 | Headless mode                           | WW has bot detection; persistent profile + headed = safest                         |
 | Parallel scraping                       | Unnecessary for this corpus size; increases detection risk                         |
-| Full-Cycle board                        | Employer Direct is sufficient for v1; Full-Cycle adds complexity for marginal gain |
+| Full-Cycle scraping                     | UI has a board selector placeholder, but the scraper currently writes only Employer Direct rows |
 | Model-based classification              | Keyword scoring is transparent, instant, and tunable via YAML                      |
-| Vector database (pgvector, FAISS, etc.) | 375 × 384 fits in <1MB; numpy matmul is faster than any index at this scale        |
+| Vector database (pgvector, FAISS, etc.) | The corpus is small; numpy matmul is simpler and fast enough                       |
 | OpenAI/Anthropic embeddings             | Local model is free, offline, and quality difference is small for this corpus      |
 | Auth / multi-user                       | Personal tool; single local user                                                   |
 | Public deployment                       | Personal tool; Docker is for local reproducibility, not public hosting             |
