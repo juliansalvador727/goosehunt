@@ -163,12 +163,19 @@ Each role has a list of positive keywords in `config/roles.yaml`. Score = number
 firmware:
   keywords:
     - firmware
-    - RTOS
     - bare-metal
-    - embedded C
     - bootloader
-    - HAL
-    - register
+    - RTOS
+    - FreeRTOS
+    - embedded C
+    - device driver
+    - interrupt handler
+    - microcontroller
+    - MCU
+    - SPI bus
+    - I2C
+    - UART
+    - CAN bus
 ```
 
 ### Why not an LLM for v1
@@ -177,9 +184,10 @@ Keyword scoring is transparent, instant, and free. You can look at a posting's s
 
 ### Resume cosine-sim scorer
 
-- Embed the resume PDF text once using the same `all-MiniLM-L6-v2` model.
-- Load all posting embeddings into one numpy array.
-- `scores = (embeddings @ resume_vec) / (norms * |resume_vec|)` — one matmul.
+- Extract text from `resume.pdf` via pdfplumber (`resume/parser.py`).
+- Embed the resume text once using the same `all-MiniLM-L6-v2` model (`embed/embed_resume.py`).
+- Load all posting embeddings from the DB into one `(N, 384)` numpy array.
+- `scores = matrix @ resume_vec` — one matmul. Both sides are unit vectors (sentence-transformers normalizes by default), so cosine similarity reduces to dot product.
 - Write back to `score_resume`.
 
 This rewards postings whose semantic content (responsibilities, required skills) is similar to your resume's content — not just literal word overlap. A posting titled "Mission Software Engineer" can score highly against a resume mentioning "forward-deployed work" even with zero shared keywords, because the embedding space captures the semantic relationship.

@@ -10,7 +10,7 @@ Personal WaterlooWorks co-op posting aggregator. Scrapes the Employer Direct boa
 
 1. **Scrapes** all postings from the Employer Direct board using Playwright with a persistent browser profile (you log in once, Duo once, then leave it alone).
 2. **Stores** every posting in a local SQLite database — resumable, so a crashed scrape picks up where it left off.
-3. **Classifies** each posting against six target roles using tunable keyword lists in `config/roles.yaml`.
+3. **Classifies** each posting against seven target roles using tunable keyword lists in `config/roles.yaml`.
 4. **Scores** each posting against your resume PDF using cosine similarity on sentence embeddings.
 5. **Serves** a local web UI — one page, every posting loaded, client-side sort/filter, no build step.
 
@@ -18,16 +18,16 @@ Personal WaterlooWorks co-op posting aggregator. Scrapes the Employer Direct boa
 
 ## Target roles
 
-| Score column      | Role                      |
-|-------------------|---------------------------|
-| `score_firmware`  | Firmware                  |
-| `score_embedded`  | Embedded systems          |
-| `score_hardware`  | Hardware / FPGA / PCB     |
-| `score_software`  | Software / SWE            |
-| `score_fde`               | Forward-deployed engineer |
-| `score_mts`               | Member of technical staff |
-| `score_power_electronics` | Power electronics / drives |
-| `score_resume`            | Resume cosine similarity  |
+| Score column               | Role                       |
+|----------------------------|----------------------------|
+| `score_firmware`           | Firmware                   |
+| `score_embedded`           | Embedded systems           |
+| `score_hardware`           | Hardware / FPGA / PCB      |
+| `score_software`           | Software / SWE             |
+| `score_fde`                | Forward-deployed engineer  |
+| `score_mts`                | Member of technical staff  |
+| `score_power_electronics`  | Power electronics / drives |
+| `score_resume`             | Resume cosine similarity   |
 
 ---
 
@@ -45,11 +45,12 @@ goosehunt/
 │   ├── schema.sql          # CREATE TABLE statements
 │   └── ingest.py           # JSONL → SQLite
 ├── embed/
-│   └── embed_postings.py   # sentence-transformers → BLOB column
+│   ├── embed_postings.py   # sentence-transformers → BLOB column
+│   └── embed_resume.py     # embed resume PDF → score_resume column
 ├── classifier/
-│   └── scorer.py           # keyword scorer + TF-IDF resume scorer
+│   └── scorer.py           # keyword scorer → score_* columns
 ├── resume/
-│   └── parser.py           # pdfplumber PDF → text
+│   └── parser.py           # pdfplumber PDF → plain text
 ├── web/
 │   ├── main.py             # FastAPI app
 │   └── static/
@@ -85,13 +86,14 @@ CREATE TABLE postings (
     scraped_at        TEXT,
     updated_at        TEXT,
     embedding         BLOB,          -- float32[384] via all-MiniLM-L6-v2
-    score_firmware    REAL,
-    score_embedded    REAL,
-    score_hardware    REAL,
-    score_software    REAL,
-    score_fde         REAL,
-    score_mts         REAL,
-    score_resume      REAL
+    score_firmware          REAL,
+    score_embedded          REAL,
+    score_hardware          REAL,
+    score_software          REAL,
+    score_fde               REAL,
+    score_mts               REAL,
+    score_power_electronics REAL,
+    score_resume            REAL
 );
 ```
 
