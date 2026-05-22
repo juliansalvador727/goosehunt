@@ -87,7 +87,7 @@ Single-threaded, no concurrent requests. ~1s random delay between postings. Manu
 
 ### Why SQLite
 
-Zero infrastructure. The entire corpus of WW postings for one term is small (hundreds to low thousands of rows — Employer Direct is ~300–500, Full-Cycle adds another 500–1000 if we ever enable it). SQLite is sufficient and the `.db` file is easy to inspect with any SQLite browser.
+Zero infrastructure. The entire corpus of WW postings for one term is small (hundreds to low thousands of rows — Employer Direct is ~300–500). SQLite is sufficient and the `.db` file is easy to inspect with any SQLite browser.
 
 ### Schema decisions
 
@@ -132,7 +132,7 @@ Per posting, the input string is:
 title + " " + title + " " + title + " " + summary + " " + responsibilities + " " + required_skills
 ```
 
-The title is repeated 3× to weight it more heavily in the embedding. This is a known trick for short documents — the title is the highest-signal field and otherwise gets drowned out by boilerplate summary text (especially common in postings where the "summary" is mostly the employer's marketing copy). Empirically, this gives noticeably better resume-to-posting matching than concatenation without weighting.
+The title is repeated 3× to weight it more heavily in the embedding. This is a known trick for short documents — the title is the highest-signal field and otherwise gets drowned out by boilerplate summary text. Empirically, this gives noticeably better resume-to-posting matching than concatenation without weighting.
 
 ### Storage
 
@@ -146,9 +146,9 @@ If we change the model or the input text strategy, we need to re-embed everythin
 
 ### Why not pgvector / FAISS / chromadb
 
-- 2000 rows × 384 dims = 3MB in memory. Exact cosine similarity is a single numpy matmul, ~5ms.
+- 375 rows × 384 dims = <1MB in memory. Exact cosine similarity is a single numpy matmul, ~5ms.
 - HNSW or IVFFlat indexes are overhead at this scale, not speedup. They exist for million-row corpora where O(N) is too slow.
-- One source of truth: no Postgres instance, no Supabase account, no separate vector-store service, no migrations. The whole thing is a `.db` file.
+- One source of truth: no Postgres instance, no separate vector-store service, no migrations. The whole thing is a `.db` file.
 
 ---
 
@@ -158,28 +158,20 @@ If we change the model or the input text strategy, we need to re-embed everythin
 
 Each role has a list of positive keywords in `config/roles.yaml`. Score = number of keyword hits in the concatenated text fields (`title + org + summary + responsibilities + required_skills`), normalized to [0, 1] by dividing by the max observed score across the corpus. Simple but tunable.
 
-```yaml
-firmware:
-  keywords:
-    - firmware
-    - bare-metal
-    - bootloader
-    - RTOS
-    - FreeRTOS
-    - embedded C
-    - device driver
-    - interrupt handler
-    - microcontroller
-    - MCU
-    - SPI bus
-    - I2C
-    - UART
-    - CAN bus
-```
+Four roles are currently active:
+
+| Role       | Label  | Coverage                                               |
+|------------|--------|--------------------------------------------------------|
+| `software` | SWE    | Backend, frontend, cloud, distributed systems          |
+| `ai_ml`    | AI/ML  | ML engineering, deep learning, LLMs, data science      |
+| `firmware` | FW     | Firmware, embedded, mechatronics, PCB design           |
+| `hardware` | HW     | FPGA, Verilog, circuit design, ASIC, signal integrity  |
+
+Add/remove keywords in `config/roles.yaml` and re-run `make score` to retune.
 
 ### Why not an LLM for v1
 
-Keyword scoring is transparent, instant, and free. You can look at a posting's score and immediately know which keywords fired — the UI shows the matched keywords directly in the expanded detail panel. LLM classification would be slower, cost money per run, and be harder to debug. The YAML config makes tuning straightforward — add a keyword, re-run `make score`.
+Keyword scoring is transparent, instant, and free. You can look at a posting's score and immediately know which keywords fired — the UI shows matched keywords directly in the detail panel. LLM classification would be slower, cost money per run, and be harder to debug.
 
 ### Resume cosine-sim scorer
 
@@ -189,19 +181,13 @@ Keyword scoring is transparent, instant, and free. You can look at a posting's s
 - `scores = matrix @ resume_vec` — one matmul. Both sides are unit vectors (sentence-transformers normalizes by default), so cosine similarity reduces to dot product.
 - Write back to `score_resume`.
 
-This rewards postings whose semantic content (responsibilities, required skills) is similar to your resume's content — not just literal word overlap. A posting titled "Mission Software Engineer" can score highly against a resume mentioning "forward-deployed work" even with zero shared keywords, because the embedding space captures the semantic relationship.
+This rewards postings whose semantic content is similar to your resume's content — not just literal word overlap.
 
 Re-scoring after updating your resume takes <1s. The classifier and the resume scorer are decoupled: `make score` runs both, but you can rerun the resume scorer alone after editing your resume.
 
 ### Why semantic over TF-IDF
 
-We considered TF-IDF early on. The case against:
-
-- TF-IDF rewards literal vocabulary overlap. Brittle for roles like FDE/MTS where titles vary wildly across companies and the relevant signal is conceptual, not lexical.
-- Embeddings capture "Mission Software Engineer ≈ Forward Deployed Engineer ≈ Member of Technical Staff" even with no shared tokens.
-- For technical-skill matches (firmware, embedded), the keyword classifier already handles literal-overlap cases — having the resume scorer do the same thing is redundant.
-
-The semantic scorer complements the keyword classifier instead of duplicating it.
+TF-IDF rewards literal vocabulary overlap. Brittle for roles where titles vary wildly across companies and the relevant signal is conceptual, not lexical. Embeddings capture semantic similarity even with no shared tokens. The semantic scorer complements the keyword classifier instead of duplicating it.
 
 ---
 
@@ -235,13 +221,10 @@ The full corpus fits in one JSON response (a few MB at most, embeddings excluded
     "required_skills": "...",
     "scraped_at": "2026-05-20T04:12:00Z",
     "updated_at": "2026-05-20T04:12:00Z",
-    "score_firmware": 0.85,
-    "score_embedded": 0.4,
-    "score_hardware": 0.1,
     "score_software": 0.12,
-    "score_fde": 0.05,
-    "score_mts": 0.03,
-    "score_power_electronics": 0.08,
+    "score_ai_ml": 0.03,
+    "score_firmware": 0.85,
+    "score_hardware": 0.10,
     "score_resume": 0.43,
     "comp_hourly": 26.49,
     "comp_score": 0.238,
@@ -249,13 +232,10 @@ The full corpus fits in one JSON response (a few MB at most, embeddings excluded
     "apply_email": "careers@example.com",
     "apply_link": null,
     "keyword_hits": {
-      "firmware": ["firmware", "rtos", "spi bus"],
-      "embedded": ["embedded c", "microcontroller"],
-      "hardware": [],
       "software": [],
-      "fde": [],
-      "mts": [],
-      "power_electronics": []
+      "ai_ml": [],
+      "firmware": ["firmware", "rtos", "spi"],
+      "hardware": ["pcb"]
     }
   }
 ]
@@ -276,7 +256,7 @@ Three enrichment passes run over each row before it's returned:
 5. Annual: `$45,000 – $55,000 per year` → ÷ 2,080 hrs
 6. Fallback: bare `$X – $Y` where midpoint is in [10, 100] → treated as hourly
 
-Result is `comp_hourly` (est. $/hr). `comp_score` normalizes to [0, 1]: $16/hr → 0.0, $60/hr → 1.0. ~63% of postings yield a parseable rate.
+Result is `comp_hourly` (est. $/hr). `comp_score` normalizes to [0, 1]: $16/hr → 0.0, $60/hr → 1.0.
 
 **Application method detection** — inspects `Application Delivery`, `If By Email, Send To`, and `Additional Application Information` fields from `raw_fields_json`:
 
@@ -284,30 +264,51 @@ Result is `comp_hourly` (est. $/hr). `comp_score` normalizes to [0, 1]: $16/hr �
 - `apply_email`: extracted email address, or null.
 - `apply_link`: first `https://` URL found in additional application info, or null.
 
-**Keyword hit extraction** — `config/roles.yaml` is loaded once at startup. For each posting, the concatenated text (`title + org + summary + responsibilities + required_skills`) is scanned for each role's keyword list. Returns `keyword_hits`: a dict mapping each role to the list of keywords that matched.
+**Keyword hit extraction** — `config/roles.yaml` is loaded once at startup. For each posting, the concatenated text is scanned for each role's keyword list. Returns `keyword_hits`: a dict mapping each role to the list of keywords that matched.
 
-### UI features
+### UI
+
+Two-pane layout: compact sortable table on the left, sticky detail panel on the right.
 
 **Header controls:**
 
-- Search box: instant client-side filter on `title`, `org`, `location`.
-- Role chips: toggle roles to show only postings with `score_{role} ≥ threshold`. Multiple roles are OR'd.
-- Min threshold input: sets the score cutoff for role filtering.
-- Apply chips: **Email** and **Ext. link** filter to postings that require applying by email or external URL respectively. Stacks with role filters.
+- Search box: instant client-side filter on title, org, location, summary, responsibilities, required skills, and job ID.
+- Role chips (SWE, AI/ML, FW, HW): toggle to show only postings with a non-zero score for that role. Multiple roles are OR'd.
+- Apply by chips (Email, Link): filter to postings that require applying by email or external URL. Stacks with role filters.
 - Posting count: shows `filtered / total`.
+- Ctrl+K button: opens the command palette.
 
 **Table:**
 
-- All columns are sortable (click header to toggle asc/desc). Default sort: `score_resume` desc.
-- Score cells are color-coded: green tint scales with score, grey for null.
-- **Pay column**: displays estimated hourly as `$26/h`; hover tooltip shows full `est. $26.49/hr`. Null shown as `—`.
-- **Job ID column**: click to copy the ID to clipboard; cell briefly shows "Copied!" then reverts.
+- All columns sortable (click header). Default sort: `score_resume` desc.
+- Score cells color-coded: green tint scales with score, grey for null/zero.
+- Pay column: displays estimated hourly as `$26/h`; hover tooltip shows full `est. $26.49/hr`.
+- Job ID column: click to copy to clipboard.
 
-**Expanded detail panel** (click posting title to open):
+**Keyboard shortcuts:**
 
-- **Matched keywords**: pill chips for every keyword that fired across all roles. Hidden if no keywords matched.
-- **Apply**: clickable `mailto:` link for email jobs, or direct external URL for link jobs. Hidden for WW-only postings.
-- **Summary**, **Responsibilities**, **Required Skills**: full text, no character truncation. Panel scrolls vertically if content is long.
+| Key      | Action                  |
+|----------|-------------------------|
+| `j` / `k` | Navigate rows          |
+| `/`      | Focus search            |
+| `Esc`    | Blur search             |
+| `c`      | Copy selected job ID    |
+| `e`      | Copy apply email        |
+| `Shift+S` | Sort by resume score   |
+| `Shift+P` | Sort by pay            |
+| `Ctrl+K` | Open command palette    |
+
+**Detail panel:**
+
+- Title, company, location, deadline, pay in the header.
+- Score grid: one box per role + resume + pay, color-coded.
+- Apply row with one-click copy for email jobs or direct link for external applications.
+- Role-labeled keyword chips showing exactly which keywords fired and for which role.
+- Scrollable summary, responsibilities, and required skills sections.
+
+**Command palette (Ctrl+K):**
+
+Searchable list of all actions: sort by any column, toggle any filter, copy job ID/email, clear search and filters.
 
 ---
 
@@ -334,12 +335,6 @@ All pipeline steps are idempotent, so re-running them on an already-populated DB
 ### Scraper constraint
 
 The scraper needs a headed Chromium window with a persistent WaterlooWorks session (`scraper/profile/`). This cannot run in Docker without X11 forwarding or VNC, and the session is tied to the local machine anyway. The workflow is: scrape locally with `make scrape`, then run the container anywhere with `data/postings.jsonl` bind-mounted in.
-
-### Why not Dockerize the scraper
-
-- WW bot detection is best handled by headed + persistent profile, which requires a real display
-- The session cookies live in `scraper/profile/` on the local machine — moving them into a container adds complexity for no benefit
-- The corpus is scraped once per term, not continuously; there's no operational reason to run the scraper on a remote device
 
 ---
 

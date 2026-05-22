@@ -16,12 +16,9 @@ CREATE TABLE IF NOT EXISTS postings (
     updated_at        TEXT,
     embedding         BLOB,
     score_firmware          REAL,
-    score_embedded          REAL,
     score_hardware          REAL,
     score_software          REAL,
-    score_fde               REAL,
-    score_mts               REAL,
-    score_power_electronics REAL,
+    score_ai_ml             REAL,
     score_resume            REAL
 );
 

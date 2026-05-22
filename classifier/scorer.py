@@ -8,7 +8,7 @@ import yaml
 CONFIG_PATH = Path(__file__).parent.parent / "config" / "roles.yaml"
 DB_PATH = Path(__file__).parent.parent / "data" / "postings.db"
 
-ROLES = ["firmware", "embedded", "hardware", "software", "fde", "mts", "power_electronics"]
+ROLES = ["firmware", "hardware", "software", "ai_ml"]
 
 
 def load_keywords(path: Path) -> dict[str, list[str]]:
@@ -63,24 +63,18 @@ def main() -> None:
         # Write back
         conn.executemany(
             """UPDATE postings SET
-                score_firmware          = :firmware,
-                score_embedded          = :embedded,
-                score_hardware          = :hardware,
-                score_software          = :software,
-                score_fde               = :fde,
-                score_mts               = :mts,
-                score_power_electronics = :power_electronics
+                score_firmware = :firmware,
+                score_hardware = :hardware,
+                score_software = :software,
+                score_ai_ml    = :ai_ml
                WHERE job_id = :job_id""",
             [
                 {
-                    "job_id":            rows[i]["job_id"],
-                    "firmware":          scores["firmware"][i],
-                    "embedded":          scores["embedded"][i],
-                    "hardware":          scores["hardware"][i],
-                    "software":          scores["software"][i],
-                    "fde":               scores["fde"][i],
-                    "mts":               scores["mts"][i],
-                    "power_electronics": scores["power_electronics"][i],
+                    "job_id":   rows[i]["job_id"],
+                    "firmware": scores["firmware"][i],
+                    "hardware": scores["hardware"][i],
+                    "software": scores["software"][i],
+                    "ai_ml":    scores["ai_ml"][i],
                 }
                 for i in range(len(rows))
             ],

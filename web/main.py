@@ -32,9 +32,8 @@ COLUMNS = [
     "deadline", "deadline_iso", "work_term", "openings",
     "summary", "responsibilities", "required_skills",
     "raw_fields_json", "scraped_at", "updated_at",
-    "score_firmware", "score_embedded", "score_hardware",
-    "score_software", "score_fde", "score_mts",
-    "score_power_electronics", "score_resume",
+    "score_firmware", "score_hardware",
+    "score_software", "score_ai_ml", "score_resume",
 ]
 
 app = FastAPI()

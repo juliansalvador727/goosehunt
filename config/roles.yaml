@@ -14,49 +14,53 @@ firmware:
     - FreeRTOS
     - Zephyr
     - embedded C
+    - embedded C++
     - device driver
     - interrupt handler
     - interrupt service routine
+    - ISR
     - microcontroller
     - MCU
     - ARM Cortex
     - STM32
     - ESP32
+    - nRF
     - hardware abstraction layer
+    - HAL
     - peripheral
-    - SPI bus
-    - SPI interface
+    - SPI
     - I2C
     - UART
     - CAN bus
     - DMA
     - register-level
-    - interrupt handler
-    - interrupt service routine
-    - ISR
     - bring-up
     - board bring-up
-
-embedded:
-  keywords:
     - embedded
     - embedded systems
     - embedded software
     - embedded Linux
-    - microcontroller
-    - MCU
-    - FPGA
     - real-time
-    - RTOS
-    - hardware abstraction
     - BSP
-    - board support
+    - board support package
     - Yocto
-    - device driver
     - kernel module
     - cross-compilation
-    - ARM
     - low-level
+    - mechatronics
+    - PCB
+    - PCB design
+    - PCB layout
+    - schematic
+    - Altium
+    - KiCad
+    - circuit design
+    - hardware design
+    - signal integrity
+    - sensor integration
+    - actuator
+    - motor control
+    - robotics
 
 hardware:
   keywords:
@@ -114,58 +118,13 @@ software:
     - system design
     - CI/CD
 
-fde:
+ai_ml:
   keywords:
-    - forward deployed
-    - forward-deployed
-    - mission software
-    - field engineer
-    - solutions engineer
-    - implementation engineer
-    - professional services
-    - customer-facing
-    - client-facing
-    - customer success
-    - technical account manager
-    - deployment engineer
-    - field deployment
-
-power_electronics:
-  keywords:
-    - power electronics
-    - motor control
-    - inverter
-    - converter
-    - gate driver
-    - switched-mode
-    - SMPS
-    - buck converter
-    - boost converter
-    - PLC
-    - motor drive
-    - variable frequency drive
-    - VFD
-    - power system
-    - transformer
-    - rectifier
-    - battery management
-    - BMS
-    - energy storage
-    - grid
-
-mts:
-  keywords:
-    - member of technical staff
-    - staff engineer
-    - principal engineer
-    - technical lead
-    - tech lead
+    - machine learning
     - ML engineer
     - machine learning engineer
     - AI engineer
-    - research engineer
-    - research scientist
-    - applied scientist
+    - artificial intelligence
     - deep learning
     - neural network
     - LLM
@@ -174,3 +133,24 @@ mts:
     - NLP
     - natural language processing
     - reinforcement learning
+    - research engineer
+    - research scientist
+    - applied scientist
+    - data scientist
+    - data science
+    - PyTorch
+    - TensorFlow
+    - JAX
+    - transformer
+    - diffusion model
+    - model training
+    - inference
+    - fine-tuning
+    - RAG
+    - embedding
+    - vector database
+    - MLOps
+    - model deployment
+    - feature engineering
+
+

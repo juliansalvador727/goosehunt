@@ -166,14 +166,6 @@
     .chip.on { background: var(--ac-bg); border-color: var(--ac); color: var(--ac); }
     .chip input { display: none; }
 
-    .thr { display: flex; align-items: center; gap: 5px; color: var(--tx3); font-size: 11px; flex-shrink: 0; }
-    .thr input[type=number] {
-      width: 46px; padding: 3px 5px;
-      border: 1px solid var(--bd); border-radius: 4px;
-      background: var(--s2); color: var(--tx);
-      font-size: 11px; font-family: var(--mono); text-align: center;
-    }
-    .thr input:focus { outline: none; border-color: var(--ac); }
 
     .topbar-r { margin-left: auto; display: flex; align-items: center; gap: 10px; }
     .count { font-size: 11px; color: var(--tx3); font-family: var(--mono); white-space: nowrap; }
@@ -418,7 +410,7 @@
   <div class="srch-wrap">
     <i class="srch-icon">⌕</i>
     <input type="search" id="search" x-ref="srch" x-model="search"
-           @input="applyFilters()" placeholder="Search title, org, location…"
+           @input="applyFilters()" placeholder="Search title, org, location, skills, summary…"
            autocomplete="off" spellcheck="false">
   </div>
 
@@ -443,13 +435,6 @@
     <label class="chip" :class="{on: fLink}">
       <input type="checkbox" x-model="fLink" @change="applyFilters()">Link
     </label>
-  </div>
-
-  <div class="vdiv"></div>
-
-  <div class="thr">
-    <span>min</span>
-    <input type="number" x-model.number="thresh" @change="applyFilters()" step="0.05" min="0" max="1">
   </div>
 
   <div class="topbar-r">
@@ -653,11 +638,10 @@ function app() {
     search: '',
     sortCol: 'score_resume',
     sortDir: -1,
-    thresh: 0.10,
     selId: null,
     selIdx: -1,
-    roleList: ['firmware','embedded','hardware','software','fde','mts','power_electronics'],
-    roles: { firmware:false, embedded:false, hardware:false, software:false, fde:false, mts:false, power_electronics:false },
+    roleList: ['software','ai_ml','firmware','hardware'],
+    roles: { software:false, ai_ml:false, firmware:false, hardware:false },
     fEmail: false,
     fLink: false,
     cpId_: null,
@@ -686,12 +670,15 @@ function app() {
       if (q) rows = rows.filter(p =>
         (p.title||'').toLowerCase().includes(q) ||
         (p.org||'').toLowerCase().includes(q) ||
-        (p.location||'').toLowerCase().includes(q)
+        (p.location||'').toLowerCase().includes(q) ||
+        (p.job_id||'').toLowerCase().includes(q) ||
+        (p.summary||'').toLowerCase().includes(q) ||
+        (p.responsibilities||'').toLowerCase().includes(q) ||
+        (p.required_skills||'').toLowerCase().includes(q)
       );
       const active = this.roleList.filter(r => this.roles[r]);
       if (active.length) {
-        const t = this.thresh;
-        rows = rows.filter(p => active.some(r => (p['score_'+r]??0) >= t));
+        rows = rows.filter(p => active.some(r => (p['score_'+r]??0) > 0));
       }
       if (this.fEmail || this.fLink) {
         rows = rows.filter(p =>
@@ -794,16 +781,15 @@ function app() {
         {id:'sp',  cat:'sort',   label:'Sort by Pay',                  fn: s('comp_score')},
         {id:'sdl', cat:'sort',   label:'Sort by Deadline',             fn: s('deadline_iso')},
         {id:'sfw', cat:'sort',   label:'Sort by Firmware score',       fn: s('score_firmware')},
-        {id:'sem', cat:'sort',   label:'Sort by Embedded score',       fn: s('score_embedded')},
         {id:'shw', cat:'sort',   label:'Sort by Hardware score',       fn: s('score_hardware')},
         {id:'ssw', cat:'sort',   label:'Sort by Software score',       fn: s('score_software')},
-        {id:'spw', cat:'sort',   label:'Sort by Power Electronics',    fn: s('score_power_electronics')},
+        {id:'sai', cat:'sort',   label:'Sort by AI/ML score',          fn: s('score_ai_ml')},
         {id:'ffe', cat:'filter', label:'Toggle Email filter',          fn: f(() => this.fEmail=!this.fEmail)},
         {id:'ffl', cat:'filter', label:'Toggle Link filter',           fn: f(() => this.fLink=!this.fLink)},
         {id:'ffw', cat:'filter', label:'Toggle Firmware filter',       fn: f(() => this.roles.firmware=!this.roles.firmware)},
-        {id:'fem', cat:'filter', label:'Toggle Embedded filter',       fn: f(() => this.roles.embedded=!this.roles.embedded)},
         {id:'fhw', cat:'filter', label:'Toggle Hardware filter',       fn: f(() => this.roles.hardware=!this.roles.hardware)},
         {id:'fsw', cat:'filter', label:'Toggle Software filter',       fn: f(() => this.roles.software=!this.roles.software)},
+        {id:'fai', cat:'filter', label:'Toggle AI/ML filter',          fn: f(() => this.roles.ai_ml=!this.roles.ai_ml)},
         {id:'cid', cat:'copy',   label:'Copy selected job ID',         fn: () => { if (this.selId) this.cpId(this.selId); }},
         {id:'cem', cat:'copy',   label:'Copy apply email',             fn: () => { if (this.selPosting?.apply_email) this.cpEmail(this.selPosting.apply_email); }},
         {id:'clr', cat:'filter', label:'Clear all filters',            fn: f(() => { this.roleList.forEach(r=>this.roles[r]=false); this.fEmail=false; this.fLink=false; })},
@@ -874,13 +860,11 @@ function app() {
     },
 
     rLabel(r) {
-      return {firmware:'FW',embedded:'EM',hardware:'HW',software:'SW',
-              fde:'FDE',mts:'MTS',power_electronics:'PWR'}[r] || r;
+      return {software:'SWE',ai_ml:'AI/ML',firmware:'FW',hardware:'HW'}[r] || r;
     },
 
     kwCls(role) {
-      return {firmware:'kw-fw',embedded:'kw-em',hardware:'kw-hw',software:'kw-sw',
-              fde:'kw-fde',mts:'kw-mts',power_electronics:'kw-pwr'}[role] || '';
+      return {firmware:'kw-fw',hardware:'kw-hw',software:'kw-sw',ai_ml:'kw-fde'}[role] || '';
     },
 
     snip(txt) {

@@ -10,7 +10,7 @@ Personal WaterlooWorks co-op posting aggregator. Scrapes the Employer Direct boa
 
 1. **Scrapes** all postings from the Employer Direct board using Playwright with a persistent browser profile (you log in once, Duo once, then leave it alone).
 2. **Stores** every posting in a local SQLite database — resumable, so a crashed scrape picks up where it left off.
-3. **Classifies** each posting against seven target roles using tunable keyword lists in `config/roles.yaml`.
+3. **Classifies** each posting against four target roles using tunable keyword lists in `config/roles.yaml`.
 4. **Scores** each posting against your resume PDF using cosine similarity on sentence embeddings.
 5. **Parses compensation** from each posting's free-text pay field and normalizes it to an estimated hourly rate.
 6. **Serves** a local web UI — one page, every posting loaded, client-side sort/filter, no build step.
@@ -19,17 +19,14 @@ Personal WaterlooWorks co-op posting aggregator. Scrapes the Employer Direct boa
 
 ## Score columns
 
-| Column                     | What it measures                      |
-|----------------------------|---------------------------------------|
-| `score_firmware`           | Firmware keyword match                |
-| `score_embedded`           | Embedded systems keyword match        |
-| `score_hardware`           | Hardware / FPGA / PCB keyword match   |
-| `score_software`           | Software / SWE keyword match          |
-| `score_fde`                | Forward-deployed engineer match       |
-| `score_mts`                | Member of technical staff match       |
-| `score_power_electronics`  | Power electronics / drives match      |
-| `score_resume`             | Resume cosine similarity              |
-| `comp_score`               | Estimated pay, normalized to [0, 1]   |
+| Column           | What it measures                          |
+|------------------|-------------------------------------------|
+| `score_software` | Software / SWE keyword match             |
+| `score_ai_ml`    | AI / ML / data science keyword match     |
+| `score_firmware` | Firmware / embedded / mechatronics match |
+| `score_hardware` | Hardware / FPGA / PCB keyword match      |
+| `score_resume`   | Resume cosine similarity                  |
+| `comp_score`     | Estimated pay, normalized to [0, 1]      |
 
 All `score_*` values are in [0, 1]. `comp_score` normalizes estimated hourly pay: $16/hr → 0.0, $60/hr → 1.0.
 
@@ -94,14 +91,11 @@ CREATE TABLE postings (
     scraped_at        TEXT,
     updated_at        TEXT,
     embedding         BLOB,          -- float32[384] via all-MiniLM-L6-v2
-    score_firmware          REAL,
-    score_embedded          REAL,
-    score_hardware          REAL,
-    score_software          REAL,
-    score_fde               REAL,
-    score_mts               REAL,
-    score_power_electronics REAL,
-    score_resume            REAL
+    score_firmware    REAL,
+    score_hardware    REAL,
+    score_software    REAL,
+    score_ai_ml       REAL,
+    score_resume      REAL
 );
 ```
 
@@ -155,7 +149,7 @@ make ingest && make embed && make score
 make serve
 ```
 
-On first run, a Chromium window opens. Log in (Duo if prompted), navigate to the Employer Direct board, apply any filters you want, wait for job listings to appear, then press Enter in the terminal.
+On first run, a Chromium window opens. Log in (Duo if prompted), navigate to the Employer Direct board, wait for job listings to appear, then press Enter in the terminal.
 
 ### Docker (any device, no Python setup)
 
@@ -188,3 +182,5 @@ docker compose up
 - [x] Application method detection (email vs external link) + filter chips
 - [x] Keyword hit display in detail panel
 - [x] Job ID click-to-copy
+- [x] UI redesign: dark mode, two-pane layout, keyboard navigation, command palette
+- [x] Role consolidation: SWE, AI/ML, FW, HW
