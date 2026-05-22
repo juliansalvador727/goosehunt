@@ -33,12 +33,12 @@ BOARD_TYPE = "direct"
 FIELD_MAP: dict[str, list[str]] = {
     "title":            ["job title", "position title", "title"],
     "org":              ["organization", "employer", "company name"],
-    "location":         ["location", "city", "work location"],
+    "location":         ["job - city", "city", "region", "work location"],
     "deadline":         ["deadline", "application deadline", "apply by"],
     "work_term":        ["work term", "term", "co-op term"],
     "openings":         ["openings", "number of positions", "positions available"],
     "summary":          ["job summary", "summary", "overview", "job description", "description"],
-    "responsibilities": ["responsibilities", "duties", "key responsibilities"],
+    "responsibilities": ["job responsibilities", "responsibilities", "duties", "key responsibilities"],
     "required_skills":  ["required skills", "skills required", "qualifications", "technical skills"],
 }
 
@@ -136,7 +136,7 @@ def extract_ids_from_html(html: str) -> list[str]:
 
 # ── Browser helpers ───────────────────────────────────────────────────────────
 
-async def wait_for_login(page) -> None:
+async def wait_for_login(ctx) -> "Page":
     print()
     print("=" * 60)
     print("  MANUAL STEP REQUIRED")
@@ -150,21 +150,29 @@ async def wait_for_login(page) -> None:
     print("  !! results are on screen — scraper starts from here.")
     print("=" * 60)
     print()
+
     input("  Press Enter when results are on screen... ")
-    print()
+
+    # Use whichever tab has jobs.htm, otherwise fall back to the most recently created tab
+    for p in ctx.pages:
+        if "jobs.htm" in p.url or "postings" in p.url.lower():
+            print(f"  Using tab: {p.url}\n")
+            return p
+
+    page = ctx.pages[-1]
+    print(f"  No jobs.htm tab found — using active tab: {page.url}")
+    print("  (If the action key is missing, navigate to Employer Direct and re-run.)\n")
+    return page
 
 
 async def get_action_key(page) -> str:
-    """Extract the WW action key from the page's embedded script tags."""
-    return await page.evaluate("""
+    """Extract the DataViewer action key from the page's embedded script tags."""
+    return await page.evaluate(r"""
         () => {
             for (const script of document.querySelectorAll('script')) {
                 const t = script.textContent;
-                // Pattern 1: dataParams key
-                let m = t.match(/dataParams[^'"]*['"]([^'"]{20,})['"]/);
-                if (m) return m[1];
-                // Pattern 2: action key starting with _-_-
-                m = t.match(/['"](_-_-[^'"]{10,})['"]/);
+                // Target the dataParams object's action property specifically
+                const m = t.match(/dataParams\s*:\s*\{[^}]*action\s*:\s*['"](_-_-[^'"]{20,})['"]/);
                 if (m) return m[1];
             }
             return '';
@@ -173,8 +181,8 @@ async def get_action_key(page) -> str:
 
 
 async def fetch_page_of_ids(page, action: str, page_num: int) -> list[str]:
-    """POST to the WW listing endpoint and return job IDs from that page."""
-    html = await page.evaluate("""
+    """POST to the WW DataViewer endpoint and return job IDs from that page."""
+    result = await page.evaluate("""
         async ({action, pageNum}) => {
             const form = new FormData();
             form.append('action',       action);
@@ -190,10 +198,34 @@ async def fetch_page_of_ids(page, action: str, page_num: int) -> list[str]:
                 body: form,
                 credentials: 'same-origin',
             });
-            return await resp.text();
+            const text = await resp.text();
+            try {
+                return {json: JSON.parse(text), text: null};
+            } catch (e) {
+                return {json: null, text: text};
+            }
         }
     """, {"action": action, "pageNum": page_num})
-    return extract_ids_from_html(html)
+
+    if result["json"] is not None:
+        data = result["json"]
+        ids: list[str] = []
+        # DataViewer response: {data: [{id: "12345", ...}, ...]} or {rows: [...]}
+        rows = data.get("data") or data.get("rows") or data.get("resultIds") or []
+        if isinstance(rows, list):
+            for item in rows:
+                if isinstance(item, dict):
+                    jid = str(item.get("id") or item.get("jobId") or item.get("postingId") or "")
+                    if jid and len(jid) >= 5:
+                        ids.append(jid)
+                elif isinstance(item, (str, int)) and len(str(item)) >= 5:
+                    ids.append(str(item))
+        if not ids:
+            # Fall back to regex scan on the JSON text
+            ids = extract_ids_from_html(result["text"] or str(data))
+        return ids
+    else:
+        return extract_ids_from_html(result["text"] or "")
 
 
 async def collect_all_job_ids(page) -> list[str]:
@@ -244,29 +276,29 @@ async def get_posting_overview(page, job_id: str) -> str | None:
 
 
 async def parse_overview_html(page, html: str) -> dict[str, str]:
-    """Inject overview HTML into a temp div, extract table rows, parse into dict."""
-    rows_data = await page.evaluate("""
+    """Inject overview HTML into a temp div, extract key-value pairs."""
+    return await page.evaluate("""
         (html) => {
             const div = document.createElement('div');
             div.innerHTML = html;
-            const rows = [];
-            div.querySelectorAll('table tr').forEach(tr => {
-                const cells = [];
-                tr.querySelectorAll('td, th').forEach(td => {
-                    cells.push((td.innerText || td.textContent || '').trim());
-                });
-                if (cells.some(c => c.length > 0)) rows.push(cells);
+            const fields = {};
+            div.querySelectorAll('.tag__key-value-list').forEach(container => {
+                const labelEl = container.querySelector('.label');
+                const valueEl = container.querySelector('p');
+                if (!labelEl || !valueEl) return;
+                const label = (labelEl.innerText || labelEl.textContent || '')
+                    .trim().replace(/:$/, '');
+                const value = (valueEl.innerText || valueEl.textContent || '').trim();
+                if (label && value) fields[label] = value;
             });
-            return rows;
+            return fields;
         }
     """, html)
-    return parse_table_rows(rows_data)
 
 
 # ── Scrape loop ───────────────────────────────────────────────────────────────
 
-async def run_scrape(ctx) -> None:
-    page = ctx.pages[0] if ctx.pages else await ctx.new_page()
+async def run_scrape(ctx, page) -> None:
 
     all_ids = await collect_all_job_ids(page)
     if not all_ids:
@@ -304,32 +336,54 @@ async def run_scrape(ctx) -> None:
 
 # ── Diagnostic ────────────────────────────────────────────────────────────────
 
-async def run_diag(ctx) -> None:
-    page = ctx.pages[0] if ctx.pages else await ctx.new_page()
-    print(f"\nDIAG  url: {page.url}\n")
+async def run_diag(ctx, page) -> None:
+    DIAG_FILE = DATA_DIR / "diag.md"
+    DATA_DIR.mkdir(exist_ok=True)
+    log_lines: list[str] = []
+
+    def log(s: str = "") -> None:
+        print(s)
+        log_lines.append(s)
+
+    def flush() -> None:
+        DIAG_FILE.write_text("\n".join(log_lines))
+        print(f"\n[DIAG] saved to {DIAG_FILE}")
+
+    log(f"# goosehunt diag — {datetime.now(timezone.utc).isoformat()}")
+    log()
+    log(f"## Page")
+    log(f"url: {page.url}")
+    log()
 
     action = await get_action_key(page)
-    print(f"action key : {'found (' + str(len(action)) + ' chars)' if action else 'NOT FOUND'}")
+    log(f"## Action key")
+    log(f"{'found (' + str(len(action)) + ' chars)' if action else 'NOT FOUND'}")
     if action:
-        print(f"  {action[:100]}")
+        log(f"```")
+        log(action)
+        log(f"```")
+    log()
 
+    log(f"## Window functions")
     for fn in ["getPostingOverview", "getPostingData", "orbisAppSr"]:
         exists = await page.evaluate(f"() => typeof window.{fn} !== 'undefined'")
-        status = "found" if exists else "NOT FOUND"
-        print(f"window.{fn:25s}: {status}")
+        log(f"- window.{fn}: {'found' if exists else 'NOT FOUND'}")
+    log()
 
     if not action:
-        print("\nCannot proceed without action key.")
+        log("Cannot proceed without action key.")
+        flush()
         return
 
-    print("\nFetching page 1 of job IDs via POST...")
+    log(f"## Job IDs (page 1)")
     ids = await fetch_page_of_ids(page, action, 1)
-    print(f"  job IDs found: {len(ids)}  {ids[:8]}")
+    log(f"found: {len(ids)}")
+    log(f"sample: {ids[:8]}")
+    log()
 
     if not ids:
-        print("  No IDs found — check extract_ids_from_html patterns.")
-        print("  Printing 2000 chars of POST response HTML for debugging:")
-        html = await page.evaluate("""
+        log("No IDs found — raw POST response:")
+        raw = await page.evaluate("""
             async (action) => {
                 const form = new FormData();
                 form.append('action', action);
@@ -340,20 +394,51 @@ async def run_diag(ctx) -> None:
                 return await resp.text();
             }
         """, action)
-        print(html[:2000])
+        log("```")
+        log(raw[:5000])
+        log("```")
+        flush()
         return
 
-    print(f"\nTrying getPostingOverview({ids[0]})...")
+    log(f"## getPostingOverview({ids[0]})")
     html = await get_posting_overview(page, ids[0])
     if html:
-        print(f"  HTML returned: {len(html)} chars")
+        log(f"HTML length: {len(html)} chars")
+        log()
+        log("### Raw HTML (first 5000 chars)")
+        log("```html")
+        log(html[:5000])
+        log("```")
+        log()
+        rows_data = await page.evaluate("""
+            (html) => {
+                const div = document.createElement('div');
+                div.innerHTML = html;
+                const rows = [];
+                div.querySelectorAll('table tr').forEach(tr => {
+                    const cells = [];
+                    tr.querySelectorAll('td, th').forEach(td => {
+                        cells.push((td.innerText || td.textContent || '').trim());
+                    });
+                    if (cells.some(c => c.length > 0)) rows.push(cells);
+                });
+                return rows;
+            }
+        """, html)
+        log("### Table rows_data (all)")
+        log("```")
+        for r in rows_data:
+            log(str(r))
+        log("```")
+        log()
         fields = await parse_overview_html(page, html)
-        print(f"  Fields extracted: {list(fields.keys())[:10]}")
-        print(f"  Title   : {fields.get('Job Title') or fields.get('Position Title') or '(not found)'}")
-        print(f"  Org     : {fields.get('Organization') or '(not found)'}")
+        log("### Parsed fields")
+        log("```")
+        for k, v in fields.items():
+            log(f"{k}: {v[:80]}")
+        log("```")
     else:
-        print("  No HTML returned.")
-        print("  First 500 chars of raw overview call:")
+        log("No HTML returned.")
         raw = await page.evaluate("""
             (jobId) => new Promise((resolve) => {
                 if (typeof window.getPostingOverview !== 'function') { resolve('function not found'); return; }
@@ -361,7 +446,11 @@ async def run_diag(ctx) -> None:
                 setTimeout(() => resolve('(timeout)'), 10000);
             })
         """, ids[0])
-        print(f"  {str(raw)[:500]}")
+        log("```")
+        log(str(raw)[:1000])
+        log("```")
+
+    flush()
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -381,12 +470,12 @@ async def main() -> None:
         )
         page = ctx.pages[0] if ctx.pages else await ctx.new_page()
         await page.goto("https://waterlooworks.uwaterloo.ca/", wait_until="domcontentloaded")
-        await wait_for_login(page)
+        jobs_page = await wait_for_login(ctx)
 
         if diag:
-            await run_diag(ctx)
+            await run_diag(ctx, jobs_page)
         else:
-            await run_scrape(ctx)
+            await run_scrape(ctx, jobs_page)
 
         await ctx.close()
 
