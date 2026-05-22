@@ -5,11 +5,27 @@ import re
 import sqlite3
 from pathlib import Path
 
+import yaml
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 DB_PATH = Path(__file__).parent.parent / "data" / "postings.db"
 STATIC_DIR = Path(__file__).parent / "static"
+_ROLES_PATH = Path(__file__).parent.parent / "config" / "roles.yaml"
+
+
+def _load_role_keywords() -> dict[str, list[str]]:
+    with open(_ROLES_PATH) as f:
+        config = yaml.safe_load(f)
+    return {role: [kw.lower() for kw in data["keywords"]] for role, data in config.items()}
+
+
+_ROLE_KEYWORDS = _load_role_keywords()
+
+
+def keyword_hits(text: str) -> dict[str, list[str]]:
+    tl = text.lower()
+    return {role: [kw for kw in kws if kw in tl] for role, kws in _ROLE_KEYWORDS.items()}
 
 COLUMNS = [
     "job_id", "board_type", "title", "org", "location",
@@ -265,6 +281,11 @@ def get_postings() -> list[dict]:
         row["comp_hourly"] = round(hourly, 2) if hourly is not None else None
         row["comp_score"] = round(comp_score(hourly), 3) if hourly is not None else None
         row.update(extract_apply_info(raw))
+        text = " ".join(filter(None, [
+            row.get("title"), row.get("org"),
+            row.get("summary"), row.get("responsibilities"), row.get("required_skills"),
+        ]))
+        row["keyword_hits"] = keyword_hits(text)
         result.append(row)
 
     return result

@@ -144,6 +144,16 @@
     .detail-text { color: #374151; font-size: 12px; line-height: 1.6; white-space: pre-wrap; }
 
     .loading { padding: 40px; text-align: center; color: #94a3b8; }
+
+    .kw-chip {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 10px;
+      background: #e2e8f0;
+      color: #475569;
+      font-size: 11px;
+      font-family: monospace;
+    }
   </style>
 </head>
 
@@ -248,13 +258,27 @@
           </template>
           <td class="score pay" :style="scoreStyle(p.comp_score)" x-text="fmtPay(p.comp_hourly)" :title="p.comp_hourly != null ? 'est. $' + p.comp_hourly.toFixed(2) + '/hr' : 'not listed'"></td>
           <td class="openings" x-text="p.openings ?? '—'"></td>
-          <td class="job-id"   x-text="p.job_id"></td>
+          <td class="job-id" @click="copyId(p.job_id)" title="Click to copy" style="cursor:pointer">
+            <span x-text="copiedId === p.job_id ? 'Copied!' : p.job_id"></span>
+          </td>
         </tr>
 
         <!-- ── detail row ── -->
         <tr class="detail-row" x-show="expanded === p.job_id">
           <td colspan="14">
             <div class="detail-panel">
+              <template x-if="Object.values(p.keyword_hits || {}).some(v => v.length)">
+                <div class="detail-section">
+                  <div class="detail-label">Matched keywords</div>
+                  <div style="display:flex; flex-wrap:wrap; gap:4px; margin-top:4px">
+                    <template x-for="[role, hits] in Object.entries(p.keyword_hits || {})" :key="role">
+                      <template x-for="kw in hits" :key="kw">
+                        <span class="kw-chip" x-text="kw"></span>
+                      </template>
+                    </template>
+                  </div>
+                </div>
+              </template>
               <template x-if="p.apply_email || p.apply_link">
                 <div class="detail-section">
                   <div class="detail-label">Apply</div>
@@ -309,6 +333,7 @@ function app() {
     roles: { firmware:false, embedded:false, hardware:false, software:false, fde:false, mts:false, power_electronics:false },
     applyFilter_email: false,
     applyFilter_link: false,
+    copiedId: null,
 
     async init() {
       const res = await fetch('/api/postings');
@@ -393,6 +418,12 @@ function app() {
     snippet(text) {
       if (!text) return '';
       return text.replace(/\n{3,}/g, '\n\n').trim();
+    },
+
+    copyId(id) {
+      navigator.clipboard.writeText(id);
+      this.copiedId = id;
+      setTimeout(() => { this.copiedId = null; }, 1500);
     },
   };
 }
