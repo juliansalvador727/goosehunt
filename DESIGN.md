@@ -6,44 +6,65 @@ Decisions, tradeoffs, and implementation notes for each component. Updated as we
 
 ## Scraper
 
-### Why Playwright over requests/Selenium
-WaterlooWorks renders postings via JavaScript — raw HTTP won't give you the posting content. Playwright handles dynamic content natively and makes multi-tab orchestration (catching the detail page popup) straightforward.
+### Why Playwright
+WaterlooWorks renders postings via JavaScript — raw HTTP won't give you posting content. Playwright runs a real Chromium instance and lets us call WW's own in-page JS functions directly via `page.evaluate()`, which is both simpler and more reliable than trying to replicate the AJAX calls ourselves.
 
 ### Persistent profile
 `playwright.chromium.launch_persistent_context(user_data_dir="scraper/profile/")` keeps cookies and session state across runs. You Duo-authenticate once; subsequent runs reuse the session until it expires. The `profile/` directory is gitignored so credentials don't leak.
 
-### Two-pass design rationale
-A single-pass approach (open listing → open detail → next) is fragile: if the detail page errors or the scraper dies, you lose your place in pagination. Splitting into:
+### WW JavaScript API
+WaterlooWorks exposes several global functions on the jobs page that the scraper calls directly:
 
-1. **Link collection pass** — fast, no detail fetching. Writes `data/queue.jsonl` (`job_id`, `onclick_handler`, `board_type`). Idempotent: re-running deduplicates against existing IDs.
-2. **Detail extraction pass** — reads queue, skips job IDs already in `postings.jsonl` / DB, fetches one at a time with random delay.
+**`window.getPostingOverview(postingId, callback)`** — fires a `$.post` to `/myAccount/co-op/direct/jobs.htm` with the posting's action key and returns the full posting HTML via callback. No new tab is opened.
 
-This means a crash during detail extraction loses at most one posting, and a re-run picks up where it left off with no duplicate work.
+**DataViewer POST** — the job listing is backed by a data viewer component. Its `dataParams.action` key (a long encoded string embedded in the page's `<script>` tags) is used to POST to the current page URL with `isDataViewer: true`, returning JSON rows of job IDs. Supports pagination at 100 per page.
 
-### onclick handling
-WW posting links use `onclick` attributes rather than `href`. The pattern:
+### Action key extraction
+There are dozens of `_-_-...` action strings on the page for different endpoints. The scraper specifically targets the `dataParams` block:
 
-```python
-# collect during pass 1
-onclick = await element.get_attribute("onclick")
-job_id  = re.search(r"openJob\((\d+)", onclick).group(1)
-
-# fire during pass 2
-async with ctx.expect_page() as page_info:
-    await page.evaluate(onclick)
-detail_page = await page_info.value
-await detail_page.wait_for_load_state("networkidle")
+```javascript
+const m = t.match(/dataParams\s*:\s*\{[^}]*action\s*:\s*['"](_-_-[^'"]{20,})['"]/);
 ```
 
-### Detail extraction
-Walk every `<table>` on the detail page and build a flat `label → value` dict. Store the full dict as `raw_fields_json` so we can re-parse without re-scraping if the schema changes. Pull known fields (`title`, `org`, `location`, etc.) from the dict by label name.
+This avoids accidentally picking up `getPostingOverview`'s action string (a different endpoint) or any other unrelated action.
+
+### Posting HTML parsing
+`getPostingOverview` returns HTML that uses `<div class="tag__key-value-list">` containers — not `<table>` elements. Each container has a `<span class="label">` (field name) and a `<p>` (value). The parser queries these directly:
+
+```javascript
+div.querySelectorAll('.tag__key-value-list').forEach(container => {
+    const label = container.querySelector('.label')?.textContent?.trim()?.replace(/:$/, '');
+    const value = container.querySelector('p')?.textContent?.trim();
+    if (label && value) fields[label] = value;
+});
+```
+
+The full label→value dict is stored as `raw_fields_json` so schema changes don't require re-scraping.
+
+### Field mapping
+Known fields are pulled from the raw dict by substring match on the label (case-insensitive). This tolerates minor label variations across posting types:
+
+```python
+FIELD_MAP = {
+    "title":            ["job title", "position title", "title"],
+    "org":              ["organization", "employer", "company name"],
+    "location":         ["job - city", "city", "region", "work location"],
+    "deadline":         ["deadline", "application deadline", "apply by"],
+    ...
+}
+```
+
+### Resumability
+`data/postings.jsonl` is append-only. On each run `load_done()` reads all existing job IDs from it; any ID already present is skipped. A crashed scrape loses at most one posting.
 
 ### Politeness
 ```python
-import random, asyncio
 await asyncio.sleep(random.uniform(1.5, 3.5))
 ```
-Single-threaded, no concurrent requests. This is a personal tool on a university system — don't be aggressive.
+Single-threaded, no concurrent requests. Random delay between postings. Manual login at startup — no credential storage in code.
+
+### Diagnostic mode
+`make scrape-diag` (`--diag` flag) fetches one posting, dumps the raw HTML and parsed fields to `data/diag.md`. Useful for debugging parsing regressions after WW UI updates.
 
 ---
 
@@ -54,9 +75,9 @@ Zero infrastructure. The entire corpus of WW postings for one term is small (hun
 
 ### Schema decisions
 - `job_id TEXT PRIMARY KEY` — WW job IDs are numeric strings; TEXT avoids leading-zero issues.
-- `raw_fields_json TEXT` — preserves the full label→value dict from the detail page. Future re-processing doesn't require re-scraping.
+- `raw_fields_json TEXT` — preserves the full label→value dict from the posting HTML. Future re-processing doesn't require re-scraping.
 - `score_*` columns are REAL, nullable — scores are populated by the classifier after ingestion, so freshly scraped rows have NULL scores until `make score` runs.
-- `scraped_at` vs `updated_at` — `scraped_at` is set once on first insert; `updated_at` is bumped on every upsert (e.g., re-scrape that refreshes a posting).
+- `scraped_at` vs `updated_at` — `scraped_at` is set once on first insert; `updated_at` is bumped on every upsert.
 
 ### Upsert strategy
 ```sql
@@ -68,7 +89,7 @@ ON CONFLICT(job_id) DO UPDATE SET
     -- score_* columns are NOT overwritten here;
     -- scorer handles those separately
 ```
-This lets re-runs refresh posting content without nuking scores.
+Re-runs refresh posting content without nuking scores.
 
 ---
 
@@ -116,10 +137,10 @@ The full corpus fits in one JSON response (a few MB at most). Client-side filter
 [
   {
     "job_id": "12345",
-    "board_type": "full_cycle",
+    "board_type": "direct",
     "title": "Firmware Engineer",
     "org": "Some Corp",
-    "location": "Waterloo, ON",
+    "location": "Waterloo",
     "deadline": "2026-06-01",
     "score_firmware": 0.85,
     "score_software": 0.12,
@@ -141,11 +162,8 @@ The full corpus fits in one JSON response (a few MB at most). Client-side filter
 
 ```
 WaterlooWorks (browser)
-        │  Playwright
-        ▼
-data/queue.jsonl        ← pass 1: all job_id + onclick
-        │
-        │  pass 2: detail extraction
+        │  Playwright + WW JS API
+        │    getPostingOverview(jobId) × N
         ▼
 data/postings.jsonl     ← raw scraped data
         │  db/ingest.py
@@ -167,6 +185,7 @@ localhost:8000          ← FastAPI + Alpine.js UI
 |-----------------|--------|
 | Headless mode | WW has bot detection; persistent profile + headed = safest |
 | Parallel scraping | Unnecessary for this corpus size; increases detection risk |
+| Full-Cycle board | Employer Direct is sufficient; Full-Cycle adds complexity for little gain |
 | Model-based classification | Keyword scoring is sufficient for v1; LLM adds cost and latency |
 | Auth / multi-user | Personal tool; single local user |
 | Deployment | Runs locally; no public hosting needed or wanted |

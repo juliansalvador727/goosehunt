@@ -1,6 +1,6 @@
 # goosehunt
 
-Personal WaterlooWorks co-op posting aggregator. Scrapes Full-Cycle Service and Employer Direct boards, classifies postings by role relevance and resume similarity, and serves everything in a local no-pagination web UI.
+Personal WaterlooWorks co-op posting aggregator. Scrapes the Employer Direct board, classifies postings by role relevance and resume similarity, and serves everything in a local no-pagination web UI.
 
 > **Personal use only.** WaterlooWorks ToS likely prohibits automated scraping. Use at your own risk.
 
@@ -8,7 +8,7 @@ Personal WaterlooWorks co-op posting aggregator. Scrapes Full-Cycle Service and 
 
 ## What it does
 
-1. **Scrapes** all postings from both WW boards using Playwright with a persistent browser profile (you log in once, Duo once, then leave it alone).
+1. **Scrapes** all postings from the Employer Direct board using Playwright with a persistent browser profile (you log in once, Duo once, then leave it alone).
 2. **Stores** every posting in a local SQLite database — resumable, so a crashed scrape picks up where it left off.
 3. **Classifies** each posting against six target roles using tunable keyword lists in `config/roles.yaml`.
 4. **Scores** each posting against your resume PDF using TF-IDF cosine similarity.
@@ -37,7 +37,8 @@ goosehunt/
 ├── config/
 │   └── roles.yaml          # keyword lists for each role scorer
 ├── scraper/
-│   ├── scraper.py          # Playwright two-pass scraper → JSONL
+│   ├── scraper.py          # Playwright scraper → JSONL
+│   ├── test_scraper.py     # unit tests (no browser required)
 │   └── profile/            # persistent Chromium profile (gitignored)
 ├── db/
 │   ├── schema.sql          # CREATE TABLE statements
@@ -52,7 +53,8 @@ goosehunt/
 │       └── index.html      # Alpine.js UI, no build step
 ├── data/
 │   ├── postings.jsonl      # scraper output (gitignored)
-│   └── postings.db         # SQLite DB (gitignored)
+│   ├── postings.db         # SQLite DB (gitignored)
+│   └── diag.md             # diagnostic output from --diag (gitignored)
 ├── resume.pdf              # your resume (gitignored)
 ├── Makefile
 └── requirements.txt
@@ -65,7 +67,7 @@ goosehunt/
 ```sql
 CREATE TABLE postings (
     job_id            TEXT PRIMARY KEY,
-    board_type        TEXT,          -- "full_cycle" | "direct"
+    board_type        TEXT,          -- "direct"
     title             TEXT,
     org               TEXT,
     location          TEXT,
@@ -92,24 +94,27 @@ CREATE TABLE postings (
 
 ## Scraper design
 
-Two-pass approach:
+The scraper uses WaterlooWorks' own in-page JavaScript API (no tab navigation, no HTML scraping of the listing page):
 
-**Pass 1 — collect links.** Walk pagination on both boards, harvest every `(job_id, onclick_handler)` pair. Store to a queue file so pass 2 is resumable.
+1. Extract the `dataParams.action` key embedded in the page's `<script>` tags.
+2. POST to the listing endpoint (`isDataViewer: true`) with 100 results per page — returns JSON rows with numeric job IDs.
+3. Call `window.getPostingOverview(jobId, callback)` for each job — returns posting HTML.
+4. Parse HTML by querying `.tag__key-value-list` containers (WW's key-value layout).
 
-**Pass 2 — extract details.** For each job not yet in the DB, fire the `onclick` handler via `page.evaluate(...)`, catch the new tab with `ctx.expect_page()`, walk all tables on the detail page to build a label→value dict, extract known fields, write to JSONL.
-
-Politeness: 1.5–3.5 s random delay between postings, single-threaded, manual login at startup.
+All calls go through `page.evaluate()` — no new tabs are opened.
 
 ---
 
 ## Makefile targets
 
 ```
+make install     # create venv, pip install, playwright install chromium
 make scrape      # run scraper → data/postings.jsonl
-make ingest      # ingest JSONL → SQLite
-make score       # run classifier + resume scorer, update DB
-make serve       # start FastAPI on localhost:8000
-make all         # scrape + ingest + score + serve
+make scrape-diag # inspect page state, fetch one posting, write data/diag.md
+make test        # run unit tests (no browser)
+make ingest      # ingest JSONL → SQLite        (not yet implemented)
+make score       # run classifier + resume scorer (not yet implemented)
+make serve       # start FastAPI on localhost:8000 (not yet implemented)
 ```
 
 ---
@@ -117,23 +122,23 @@ make all         # scrape + ingest + score + serve
 ## Setup
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-playwright install chromium
+make install
 
 # drop your resume here
 cp /path/to/resume.pdf resume.pdf
 
-# first run: browser opens, you log in + set up filters manually
+# first run: browser opens, you log in, navigate to Employer Direct, press Enter
 make scrape
 ```
+
+On first run, a Chromium window opens. Log in (Duo if prompted), navigate to the Employer Direct board, apply any filters you want, wait for job listings to appear, then press Enter in the terminal.
 
 ---
 
 ## Build order (incremental)
 
 - [x] README
-- [ ] Scraper → JSONL (verify end-to-end before anything else)
+- [x] Scraper → JSONL (end-to-end verified)
 - [ ] SQLite schema + JSONL ingestion
 - [ ] Keyword classifier with YAML config
 - [ ] Resume parser + TF-IDF scorer
