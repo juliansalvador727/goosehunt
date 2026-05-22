@@ -72,10 +72,10 @@ FIELD_MAP = {
 ### Politeness
 
 ```python
-await asyncio.sleep(random.uniform(1.5, 3.5))
+await asyncio.sleep(random.uniform(0.8, 1.2))
 ```
 
-Single-threaded, no concurrent requests. Random delay between postings. Manual login at startup — no credential storage in code.
+Single-threaded, no concurrent requests. ~1s random delay between postings. Manual login at startup — no credential storage in code.
 
 ### Diagnostic mode
 
@@ -92,7 +92,7 @@ Zero infrastructure. The entire corpus of WW postings for one term is small (hun
 ### Schema decisions
 
 - `job_id TEXT PRIMARY KEY` — WW job IDs are numeric strings; TEXT avoids leading-zero issues.
-- `raw_fields_json TEXT` — preserves the full label→value dict from the posting HTML. Future re-processing doesn't require re-scraping.
+- `raw_fields_json TEXT` — preserves the full label→value dict from the posting HTML. Used at API request time to extract compensation, application method, and apply contact info without re-scraping.
 - `deadline` vs `deadline_iso` — raw deadline comes from the scraper with whitespace garbage (`"Jun 2, 2026\n\t\t\t\t\t\n\t\t\t\t\t\t11:00 PM"`). Keep the raw string for display fidelity; populate `deadline_iso` during ingest via `dateutil.parser` for sorting and filtering.
 - `embedding BLOB` — `np.float32` array of shape (384,) serialized via `.tobytes()`. Decoded on read with `np.frombuffer(blob, dtype=np.float32)`.
 - `score_*` columns are REAL, nullable — scores are populated by the scorer after ingestion, so freshly scraped rows have NULL scores until `make embed` and `make score` run.
@@ -112,7 +112,7 @@ Re-runs refresh posting content without nuking embeddings or scores.
 
 ### llm_evals table
 
-Reserved for future on-demand LLM evaluation (user clicks a posting, gets a structured fit analysis cached by `(resume_hash, job_id)`). Table is created empty up front to avoid migration later. Not used in v1 of the UI.
+Reserved for future on-demand LLM evaluation (user clicks a posting, gets a structured fit analysis cached by `(resume_hash, job_id)`). Table is created empty up front to avoid migration later. Not used in the current UI.
 
 ---
 
@@ -148,7 +148,6 @@ If we change the model or the input text strategy, we need to re-embed everythin
 
 - 2000 rows × 384 dims = 3MB in memory. Exact cosine similarity is a single numpy matmul, ~5ms.
 - HNSW or IVFFlat indexes are overhead at this scale, not speedup. They exist for million-row corpora where O(N) is too slow.
-- One source of truth: SQLite. No sync layer between vector store and relational data.
 - One source of truth: no Postgres instance, no Supabase account, no separate vector-store service, no migrations. The whole thing is a `.db` file.
 
 ---
@@ -180,7 +179,7 @@ firmware:
 
 ### Why not an LLM for v1
 
-Keyword scoring is transparent, instant, and free. You can look at a posting's score and immediately know which keywords fired. LLM classification would be slower, cost money per run, and be harder to debug. The YAML config makes tuning straightforward — add a keyword, re-run `make score`.
+Keyword scoring is transparent, instant, and free. You can look at a posting's score and immediately know which keywords fired — the UI shows the matched keywords directly in the expanded detail panel. LLM classification would be slower, cost money per run, and be harder to debug. The YAML config makes tuning straightforward — add a keyword, re-run `make score`.
 
 ### Resume cosine-sim scorer
 
@@ -222,47 +221,93 @@ The full corpus fits in one JSON response (a few MB at most, embeddings excluded
 ```json
 [
   {
-    "job_id": "12345",
+    "job_id": "472013",
     "board_type": "direct",
     "title": "Firmware Engineer",
     "org": "Some Corp",
     "location": "Waterloo",
-    "deadline": "Jun 1, 2026",
-    "deadline_iso": "2026-06-01T23:00:00",
+    "deadline": "Jun 1, 2026\n\t\t\t11:59 PM",
+    "deadline_iso": "2026-06-01T23:59:00",
+    "work_term": "2026 - Fall",
+    "openings": 1,
+    "summary": "...",
+    "responsibilities": "...",
+    "required_skills": "...",
+    "scraped_at": "2026-05-20T04:12:00Z",
+    "updated_at": "2026-05-20T04:12:00Z",
     "score_firmware": 0.85,
+    "score_embedded": 0.4,
+    "score_hardware": 0.1,
     "score_software": 0.12,
+    "score_fde": 0.05,
+    "score_mts": 0.03,
+    "score_power_electronics": 0.08,
     "score_resume": 0.43,
     "comp_hourly": 26.49,
-    "comp_score": 0.24,
-    ...
+    "comp_score": 0.238,
+    "apply_method": "email",
+    "apply_email": "careers@example.com",
+    "apply_link": null,
+    "keyword_hits": {
+      "firmware": ["firmware", "rtos", "spi bus"],
+      "embedded": ["embedded c", "microcontroller"],
+      "hardware": [],
+      "software": [],
+      "fde": [],
+      "mts": [],
+      "power_electronics": []
+    }
   }
 ]
 ```
 
-`embedding` and `raw_fields_json` are never sent to the client — embeddings are only needed server-side for scoring, and raw fields are only needed to extract `comp_hourly`.
+`embedding` and `raw_fields_json` are never sent to the client. `comp_hourly`, `comp_score`, `apply_*`, and `keyword_hits` are computed at request time from the DB row.
 
-### Compensation parsing
+### Request-time enrichment (web/main.py)
 
-`web/main.py` parses the `Compensation and Benefits` field from `raw_fields_json` at request time (no extra DB column needed). The free-text field contains wildly inconsistent formats across postings, so the parser uses a prioritized set of regexes:
+Three enrichment passes run over each row before it's returned:
 
-1. **Hourly** (most common for co-op): `$25-$29 hourly`, `$27/hr`, `Hourly Rate: 20.29-24.11`, `The hourly wage...is $26.49`
-2. **Bi-weekly**: `$2,045 - $2,523 / bi-weekly` → divide by 80 hrs
-3. **Weekly**: `$1,600 per week` → divide by 40 hrs
-4. **Monthly**: `$4,264 to $5,200 per month` → divide by 173.3 hrs
-5. **Annual**: `$45,000 - $55,000 per year` → divide by 2,080 hrs
-6. **Fallback**: bare `$X - $Y` where midpoint is in [10, 100] → treated as hourly
+**Compensation parsing** — parses the free-text `Compensation and Benefits` field from `raw_fields_json` using a prioritized regex pipeline:
 
-The result is `comp_hourly` (estimated $/hr). `comp_score` normalizes this to [0, 1] with $16/hr → 0.0 and $60/hr → 1.0. ~63% of postings yield a parseable rate; the rest return `null` (shown as `—`).
+1. Hourly (most common): `$25–$29 hourly`, `$27/hr`, `Hourly Rate: 20.29–24.11`, `The hourly wage…is $26.49`
+2. Bi-weekly: `$2,045 – $2,523 / bi-weekly` → ÷ 80 hrs
+3. Weekly: `$1,600 per week` → ÷ 40 hrs
+4. Monthly: `$4,264 to $5,200 per month` → ÷ 173.3 hrs
+5. Annual: `$45,000 – $55,000 per year` → ÷ 2,080 hrs
+6. Fallback: bare `$X – $Y` where midpoint is in [10, 100] → treated as hourly
+
+Result is `comp_hourly` (est. $/hr). `comp_score` normalizes to [0, 1]: $16/hr → 0.0, $60/hr → 1.0. ~63% of postings yield a parseable rate.
+
+**Application method detection** — inspects `Application Delivery`, `If By Email, Send To`, and `Additional Application Information` fields from `raw_fields_json`:
+
+- `apply_method`: `"email"` if delivery is by email or an email address is present; `"link"` if delivery is by website or a URL is found in additional info; `"ww"` otherwise (apply through WaterlooWorks only).
+- `apply_email`: extracted email address, or null.
+- `apply_link`: first `https://` URL found in additional application info, or null.
+
+**Keyword hit extraction** — `config/roles.yaml` is loaded once at startup. For each posting, the concatenated text (`title + org + summary + responsibilities + required_skills`) is scanned for each role's keyword list. Returns `keyword_hits`: a dict mapping each role to the list of keywords that matched.
 
 ### UI features
 
-- Search box: filters on `title`, `org`, `location` (client-side, instant).
-- Role checkboxes: show only postings with score > threshold for checked roles.
-- Column headers: click to sort ascending/descending. Default sort: `score_resume` desc.
-- Color coding: high scores get a green tint, low scores grey. Same gradient applied to the Pay column.
-- **Pay column**: sortable by `comp_score`; cells display as `$26/h` with a tooltip showing the full estimated rate. Posts with no parseable pay show `—`.
-- Each row shows the `job_id` so you can cross-reference on WaterlooWorks directly.
-- Click a posting title: expands an inline detail panel (▸/▾ indicator) showing Summary, Responsibilities, and Required Skills — each truncated to 500 chars. One panel open at a time; click again to collapse.
+**Header controls:**
+
+- Search box: instant client-side filter on `title`, `org`, `location`.
+- Role chips: toggle roles to show only postings with `score_{role} ≥ threshold`. Multiple roles are OR'd.
+- Min threshold input: sets the score cutoff for role filtering.
+- Apply chips: **Email** and **Ext. link** filter to postings that require applying by email or external URL respectively. Stacks with role filters.
+- Posting count: shows `filtered / total`.
+
+**Table:**
+
+- All columns are sortable (click header to toggle asc/desc). Default sort: `score_resume` desc.
+- Score cells are color-coded: green tint scales with score, grey for null.
+- **Pay column**: displays estimated hourly as `$26/h`; hover tooltip shows full `est. $26.49/hr`. Null shown as `—`.
+- **Job ID column**: click to copy the ID to clipboard; cell briefly shows "Copied!" then reverts.
+
+**Expanded detail panel** (click posting title to open):
+
+- **Matched keywords**: pill chips for every keyword that fired across all roles. Hidden if no keywords matched.
+- **Apply**: clickable `mailto:` link for email jobs, or direct external URL for link jobs. Hidden for WW-only postings.
+- **Summary**, **Responsibilities**, **Required Skills**: full text, no character truncation. Panel scrolls vertically if content is long.
 
 ---
 
@@ -315,7 +360,7 @@ data/postings.db        ← embedding column populated
         │  classifier/scorer.py + embed/embed_resume.py
         ▼
 data/postings.db        ← score_* columns populated
-        │  web/main.py
+        │  web/main.py  (+ request-time enrichment)
         ▼
 localhost:8000          ← FastAPI + Alpine.js UI
 ```
@@ -329,9 +374,9 @@ localhost:8000          ← FastAPI + Alpine.js UI
 | Headless mode                           | WW has bot detection; persistent profile + headed = safest                         |
 | Parallel scraping                       | Unnecessary for this corpus size; increases detection risk                         |
 | Full-Cycle board                        | Employer Direct is sufficient for v1; Full-Cycle adds complexity for marginal gain |
-| Model-based classification              | Keyword scoring is sufficient for v1; LLM adds cost and latency                    |
-| Vector database (pgvector, FAISS, etc.) | 2000 × 384 fits in 3MB; numpy matmul is faster than any index at this scale        |
+| Model-based classification              | Keyword scoring is transparent, instant, and tunable via YAML                      |
+| Vector database (pgvector, FAISS, etc.) | 375 × 384 fits in <1MB; numpy matmul is faster than any index at this scale        |
 | OpenAI/Anthropic embeddings             | Local model is free, offline, and quality difference is small for this corpus      |
 | Auth / multi-user                       | Personal tool; single local user                                                   |
 | Public deployment                       | Personal tool; Docker is for local reproducibility, not public hosting             |
-| On-demand LLM evaluation in v1          | `llm_evals` table is reserved for later; not wired into the UI yet                 |
+| On-demand LLM evaluation                | `llm_evals` table is reserved for later; not wired into the UI yet                 |
