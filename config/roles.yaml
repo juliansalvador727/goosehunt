@@ -1,0 +1,176 @@
+# Keyword lists for role scoring.
+# Score = number of keywords that appear (case-insensitive substring) in
+# title + org + summary + responsibilities + required_skills.
+# Normalized to [0, 1] by dividing by the per-role max across the corpus.
+# Add/remove keywords and re-run `make score` to retune.
+
+firmware:
+  keywords:
+    - firmware
+    - bare-metal
+    - bare metal
+    - bootloader
+    - RTOS
+    - FreeRTOS
+    - Zephyr
+    - embedded C
+    - device driver
+    - interrupt handler
+    - interrupt service routine
+    - microcontroller
+    - MCU
+    - ARM Cortex
+    - STM32
+    - ESP32
+    - hardware abstraction layer
+    - peripheral
+    - SPI bus
+    - SPI interface
+    - I2C
+    - UART
+    - CAN bus
+    - DMA
+    - register-level
+    - interrupt handler
+    - interrupt service routine
+    - ISR
+    - bring-up
+    - board bring-up
+
+embedded:
+  keywords:
+    - embedded
+    - embedded systems
+    - embedded software
+    - embedded Linux
+    - microcontroller
+    - MCU
+    - FPGA
+    - real-time
+    - RTOS
+    - hardware abstraction
+    - BSP
+    - board support
+    - Yocto
+    - device driver
+    - kernel module
+    - cross-compilation
+    - ARM
+    - low-level
+
+hardware:
+  keywords:
+    - hardware
+    - FPGA
+    - PCB
+    - Verilog
+    - VHDL
+    - SystemVerilog
+    - schematic
+    - circuit design
+    - analog
+    - digital design
+    - signal integrity
+    - oscilloscope
+    - Altium
+    - KiCad
+    - ASIC
+    - RTL
+    - synthesis
+    - place and route
+    - power electronics
+    - RF
+    - hardware design
+    - electronics
+    - PCB layout
+    - logic analyzer
+
+software:
+  keywords:
+    - software engineer
+    - software developer
+    - backend
+    - back-end
+    - frontend
+    - front-end
+    - full stack
+    - full-stack
+    - web development
+    - REST API
+    - microservices
+    - distributed systems
+    - Python
+    - Java
+    - Golang
+    - TypeScript
+    - React
+    - Node.js
+    - Kubernetes
+    - Docker
+    - AWS
+    - cloud
+    - database
+    - SQL
+    - system design
+    - CI/CD
+
+fde:
+  keywords:
+    - forward deployed
+    - forward-deployed
+    - mission software
+    - field engineer
+    - solutions engineer
+    - implementation engineer
+    - professional services
+    - customer-facing
+    - client-facing
+    - customer success
+    - technical account manager
+    - deployment engineer
+    - field deployment
+
+power_electronics:
+  keywords:
+    - power electronics
+    - motor control
+    - inverter
+    - converter
+    - gate driver
+    - switched-mode
+    - SMPS
+    - buck converter
+    - boost converter
+    - PLC
+    - motor drive
+    - variable frequency drive
+    - VFD
+    - power system
+    - transformer
+    - rectifier
+    - battery management
+    - BMS
+    - energy storage
+    - grid
+
+mts:
+  keywords:
+    - member of technical staff
+    - staff engineer
+    - principal engineer
+    - technical lead
+    - tech lead
+    - ML engineer
+    - machine learning engineer
+    - AI engineer
+    - research engineer
+    - research scientist
+    - applied scientist
+    - deep learning
+    - neural network
+    - LLM
+    - large language model
+    - computer vision
+    - NLP
+    - natural language processing
+    - reinforcement learning

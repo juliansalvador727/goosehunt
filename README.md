@@ -24,9 +24,10 @@ Personal WaterlooWorks co-op posting aggregator. Scrapes the Employer Direct boa
 | `score_embedded`  | Embedded systems          |
 | `score_hardware`  | Hardware / FPGA / PCB     |
 | `score_software`  | Software / SWE            |
-| `score_fde`       | Forward-deployed engineer |
-| `score_mts`       | Member of technical staff |
-| `score_resume`    | Resume cosine similarity  |
+| `score_fde`               | Forward-deployed engineer |
+| `score_mts`               | Member of technical staff |
+| `score_power_electronics` | Power electronics / drives |
+| `score_resume`            | Resume cosine similarity  |
 
 ---
 
