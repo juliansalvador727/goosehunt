@@ -1,2 +1,5 @@
 playwright>=1.44.0
 pytest>=8.0.0
+python-dateutil>=2.9.0
+sentence-transformers>=3.0.0
+numpy>=1.26.0
