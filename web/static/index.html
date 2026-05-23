@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>goosehunt</title>
+    <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link
       rel="stylesheet"
@@ -158,12 +159,21 @@
         z-index: 100;
       }
       .logo {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
         font-size: 13px;
         font-weight: 600;
         color: var(--tx);
         letter-spacing: -0.01em;
         margin-right: 4px;
         flex-shrink: 0;
+      }
+      .logo-img {
+        width: 22px;
+        height: 22px;
+        object-fit: contain;
+        display: block;
       }
 
       /* search */
@@ -825,7 +835,10 @@
 
     <!-- ── topbar ─────────────────────────────────────────────────── -->
     <div id="topbar">
-      <span class="logo">goosehunt</span>
+      <span class="logo">
+        <img class="logo-img" src="/favicon.png" alt="" />
+        <span>goosehunt</span>
+      </span>
       <div class="board-drop" @click.outside="boardOpen=false">
         <div class="board-trigger" @click="boardOpen=!boardOpen">
           <span x-text="boards.find(b=>b.id===board).label"></span>

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo.png" alt="goosehunt logo" width="420">
+</p>
+
 # goosehunt
 
 Personal WaterlooWorks co-op posting aggregator. Scrapes the Employer Direct board, classifies postings by role relevance and resume similarity, and serves everything in a local no-pagination web UI.
