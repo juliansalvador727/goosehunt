@@ -695,6 +695,54 @@
         font-size: 13px;
         font-weight: 500;
       }
+      .status-set {
+        display: flex;
+        gap: 5px;
+        margin-bottom: 14px;
+      }
+      .status-btn {
+        flex: 1;
+        padding: 6px 7px;
+        border: 1px solid var(--bd);
+        border-radius: 6px;
+        background: var(--s2);
+        color: var(--tx3);
+        font-family: var(--sans);
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+        transition:
+          border-color 0.1s,
+          color 0.1s,
+          background 0.1s;
+      }
+      .status-btn:hover {
+        border-color: var(--bd2);
+        color: var(--tx2);
+      }
+      .status-btn.on {
+        background: var(--ac-bg);
+        border-color: var(--ac);
+        color: var(--ac);
+      }
+      .st {
+        text-align: center;
+        font-size: 10.5px;
+        font-weight: 700;
+        color: var(--tx3);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .st-maybe {
+        color: var(--amber);
+      }
+      .st-applied {
+        color: var(--green);
+      }
+      .st-ignored {
+        color: var(--tx3);
+        opacity: 0.6;
+      }
 
       /* apply row */
       .apply-row {
@@ -1109,6 +1157,18 @@
                     x-text="arr('openings')"
                   ></i>
                 </th>
+                <th
+                  style="min-width: 64px; text-align: center"
+                  @click="srt('status')"
+                  :class="{sk:sortCol==='status'}"
+                >
+                  Status
+                  <i
+                    class="sa"
+                    :class="{on:sortCol==='status'}"
+                    x-text="arr('status')"
+                  ></i>
+                </th>
                 <th style="min-width: 70px">ID</th>
               </tr>
             </thead>
@@ -1146,6 +1206,11 @@
                     :title="p.comp_hourly != null ? 'est. $'+p.comp_hourly.toFixed(2)+'/hr' : 'not listed'"
                   ></td>
                   <td class="nc" x-text="p.openings ?? '—'"></td>
+                  <td
+                    class="st"
+                    :class="'st-' + (p.status || 'new')"
+                    x-text="statusLabel(p.status)"
+                  ></td>
                   <td
                     class="ic"
                     @click.stop="cpId(p.job_id)"
@@ -1200,6 +1265,17 @@
                   class="pay-inline"
                   x-text="'$'+selPosting.comp_hourly.toFixed(0)+'/h'"
                 ></span>
+              </template>
+            </div>
+
+            <div class="status-set">
+              <template x-for="s in statusList" :key="s.id">
+                <button
+                  class="status-btn"
+                  :class="{on: (selPosting.status || 'new') === s.id}"
+                  @click="setStatus(selPosting, s.id)"
+                  x-text="s.label"
+                ></button>
               </template>
             </div>
 
@@ -1359,6 +1435,12 @@
           ],
           board: "direct",
           boardOpen: false,
+          statusList: [
+            { id: "new", label: "New" },
+            { id: "maybe", label: "Maybe" },
+            { id: "applied", label: "Applied" },
+            { id: "ignored", label: "Ignored" },
+          ],
           roleList: ["software", "ai_ml", "firmware", "hardware"],
           roles: {
             software: false,
@@ -1414,6 +1496,29 @@
           toggleTheme() {
             this.theme = this.theme === "day" ? "night" : "day";
             localStorage.setItem("goosehunt.theme", this.theme);
+          },
+
+          async setStatus(posting, status) {
+            if (!posting || posting.status === status) return;
+            const previous = posting.status || "new";
+            posting.status = status;
+            try {
+              const r = await fetch(`/api/postings/${posting.job_id}/status`, {
+                method: "PATCH",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({status}),
+              });
+              if (!r.ok) {
+                let detail = "Could not update status.";
+                try {
+                  detail = (await r.json()).detail || detail;
+                } catch (_) {}
+                throw new Error(detail);
+              }
+            } catch (err) {
+              posting.status = previous;
+              this.apiError = err?.message || "Could not update status.";
+            }
           },
 
           setBoard(id) {
@@ -1839,6 +1944,17 @@
                 firmware: "FW",
                 hardware: "HW",
               }[r] || r
+            );
+          },
+
+          statusLabel(status) {
+            return (
+              {
+                new: "New",
+                maybe: "Maybe",
+                applied: "Applied",
+                ignored: "Ignored",
+              }[status || "new"] || "New"
             );
           },
 

@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS postings (
     raw_fields_json   TEXT,
     scraped_at        TEXT,
     updated_at        TEXT,
+    status            TEXT NOT NULL DEFAULT 'new',
     embedding         BLOB,
     score_firmware          REAL,
     score_hardware          REAL,

@@ -52,6 +52,11 @@ WHERE job_id = :job_id
 
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA_PATH.read_text())
+    columns = {
+        row[1] for row in conn.execute("PRAGMA table_info(postings)").fetchall()
+    }
+    if "status" not in columns:
+        conn.execute("ALTER TABLE postings ADD COLUMN status TEXT NOT NULL DEFAULT 'new'")
     conn.commit()
 
 

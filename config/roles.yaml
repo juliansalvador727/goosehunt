@@ -136,7 +136,6 @@ software:
     - Python
     - Java
     - Golang
-    - Go
     - Rust
     - TypeScript
     - React
@@ -205,4 +204,3 @@ ai_ml:
     - time series
     - recommendation
     - ranking
-

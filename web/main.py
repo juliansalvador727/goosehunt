@@ -21,22 +21,55 @@ def _load_role_keywords() -> dict[str, list[str]]:
 
 
 _ROLE_KEYWORDS = _load_role_keywords()
+STATUS_VALUES = {"new", "maybe", "applied", "ignored"}
+PLACEHOLDER_TEXTS = {
+    "key responsibilities",
+    "responsibilities",
+    "qualifications",
+    "requirements",
+}
+PLACEHOLDER_PREFIXES = (
+    "check our list of projects",
+)
 
 
 def keyword_hits(text: str) -> dict[str, list[str]]:
     tl = text.lower()
     return {role: [kw for kw in kws if kw in tl] for role, kws in _ROLE_KEYWORDS.items()}
 
+
+def clean_posting_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    text = value.strip()
+    normalized = re.sub(r"\s+", " ", text).strip().lower()
+    if normalized in PLACEHOLDER_TEXTS:
+        return ""
+    if any(normalized.startswith(prefix) for prefix in PLACEHOLDER_PREFIXES):
+        return ""
+    return text
+
 COLUMNS = [
     "job_id", "board_type", "title", "org", "location",
     "deadline", "deadline_iso", "work_term", "openings",
     "summary", "responsibilities", "required_skills",
-    "raw_fields_json", "scraped_at", "updated_at",
+    "raw_fields_json", "scraped_at", "updated_at", "status",
     "score_firmware", "score_hardware",
     "score_software", "score_ai_ml", "score_resume",
 ]
 
 app = FastAPI()
+
+
+def ensure_postings_schema(conn: sqlite3.Connection) -> None:
+    columns = {
+        row[1] for row in conn.execute("PRAGMA table_info(postings)").fetchall()
+    }
+    if not columns:
+        raise sqlite3.OperationalError("postings table missing")
+    if "status" not in columns:
+        conn.execute("ALTER TABLE postings ADD COLUMN status TEXT NOT NULL DEFAULT 'new'")
+        conn.commit()
 
 _NUM = r"[\d,]+(?:\.\d+)?"
 _SEP = r"\s*[-–/]\s*|\s+to\s+"   # separators between range bounds
@@ -290,6 +323,7 @@ def get_postings() -> list[dict]:
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         try:
+            ensure_postings_schema(conn)
             rows = conn.execute(
                 f"SELECT {', '.join(COLUMNS)} FROM postings"
             ).fetchall()
@@ -303,6 +337,8 @@ def get_postings() -> list[dict]:
     for r in rows:
         row = dict(r)
         raw = row.pop("raw_fields_json") or ""
+        row["responsibilities"] = clean_posting_text(row.get("responsibilities"))
+        row["required_skills"] = clean_posting_text(row.get("required_skills"))
         hourly = extract_comp_hourly(raw)
         row["comp_hourly"] = round(hourly, 2) if hourly is not None else None
         row["comp_score"] = round(comp_score(hourly), 3) if hourly is not None else None
@@ -315,6 +351,39 @@ def get_postings() -> list[dict]:
         result.append(row)
 
     return result
+
+
+@app.patch("/api/postings/{job_id}/status")
+def update_posting_status(job_id: str, payload: dict) -> dict:
+    status = payload.get("status")
+    if status not in STATUS_VALUES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid status. Expected one of: {', '.join(sorted(STATUS_VALUES))}.",
+        )
+    if not DB_PATH.exists():
+        raise HTTPException(
+            status_code=503,
+            detail="Postings database not found. Run `make scrape && make pipeline` first.",
+        )
+
+    with sqlite3.connect(DB_PATH) as conn:
+        try:
+            ensure_postings_schema(conn)
+            cur = conn.execute(
+                "UPDATE postings SET status = ? WHERE job_id = ?",
+                (status, job_id),
+            )
+            conn.commit()
+        except sqlite3.OperationalError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Postings database is not initialized. Run `make ingest` or `make pipeline` first.",
+            ) from exc
+
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Posting not found.")
+    return {"job_id": job_id, "status": status}
 
 
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")

@@ -99,6 +99,7 @@ CREATE TABLE postings (
     raw_fields_json   TEXT,          -- full label→value dict as JSON
     scraped_at        TEXT,
     updated_at        TEXT,
+    status            TEXT DEFAULT 'new', -- local workflow state: new/maybe/applied/ignored
     embedding         BLOB,          -- float32[384] via all-MiniLM-L6-v2
     score_firmware    REAL,
     score_hardware    REAL,
@@ -174,6 +175,18 @@ Or re-scrape and reprocess without restarting the server:
 make scrape && make pipeline
 ```
 
+`make scrape` is resumable and skips job IDs already present in `data/postings.jsonl`. If the scraper/parser changes and you want to refresh existing postings, move the old JSONL first, then force posting embeddings because text content may have changed:
+
+```bash
+mv data/postings.jsonl data/postings.old.jsonl
+make scrape
+make ingest
+.venv/bin/python embed/embed_postings.py --force
+make score
+```
+
+Local job statuses are stored in `data/postings.db` and are preserved by ingest, so the full refresh above does not reset `new`/`maybe`/`applied`/`ignored`.
+
 On first run, a Chromium window opens. Log in (Duo if prompted), navigate to the Employer Direct board, wait for job listings to appear, then press Enter in the terminal.
 
 The scraper starts from the filters currently visible in WaterlooWorks. Set the work term and any board filters before pressing Enter.
@@ -201,8 +214,8 @@ The UI lives in `web/static/index.html` and is served by FastAPI from `web/main.
 - Board dropdown: currently useful for Employer Direct data; the scraper writes `board_type = "direct"`.
 - Filters: search, role chips (`SWE`, `AI/ML`, `FW`, `HW`), and apply-by chips (`Email`, `Link`).
 - Default apply filter: Email and Link are enabled; WaterlooWorks-only postings (`apply_method = "ww"`) are intentionally hidden unless the UI is changed to expose that method.
-- Table: sortable title/org/location/due/resume/role/pay/openings columns, click-to-copy job IDs.
-- Detail panel: score grid, apply link/email, copy buttons, keyword-hit chips, summary/responsibilities/required skills.
+- Table: sortable title/org/location/due/resume/role/pay/openings/status columns, click-to-copy job IDs.
+- Detail panel: local status buttons, score grid, apply link/email, copy buttons, keyword-hit chips, summary/responsibilities/required skills.
 - Keyboard: `j`/`k` navigate, `/` focuses search, `c` copies job ID, `m` copies email, `Shift+S` sorts by resume, `Shift+P` sorts by pay, `Ctrl+K` opens the command palette.
 - Theme toggle: a Day/Night button beside `Ctrl+K` switches palettes and persists the choice in the browser.
 - Missing resume scores: if the server can load postings but every `score_resume` value is empty, the UI shows a warning telling you to add `resume.pdf` and rerun scoring.
@@ -218,6 +231,7 @@ The UI lives in `web/static/index.html` and is served by FastAPI from `web/main.
 - API/UI: implemented with FastAPI + Alpine.js, request-time compensation/apply/keyword enrichment.
 - Docker: implemented for pipeline + serving only; scraping still runs locally.
 - Preflight checks: implemented for missing `resume.pdf` and missing scraped JSONL before pipeline/scoring/Docker startup.
+- Local job status: implemented with SQLite-backed `new`, `maybe`, `applied`, and `ignored` states.
 
 ---
 

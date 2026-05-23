@@ -33,7 +33,7 @@ BOARD_TYPE = "direct"
 FIELD_MAP: dict[str, list[str]] = {
     "title":            ["job title", "position title", "title"],
     "org":              ["organization", "employer", "company name"],
-    "location":         ["job - city", "city", "region", "work location"],
+    "location":         ["job - city", "city", "region", "work location", "location"],
     "deadline":         ["deadline", "application deadline", "apply by"],
     "work_term":        ["work term", "term", "co-op term"],
     "openings":         ["openings", "number of positions", "positions available"],
@@ -284,11 +284,12 @@ async def parse_overview_html(page, html: str) -> dict[str, str]:
             const fields = {};
             div.querySelectorAll('.tag__key-value-list').forEach(container => {
                 const labelEl = container.querySelector('.label');
-                const valueEl = container.querySelector('p');
-                if (!labelEl || !valueEl) return;
+                if (!labelEl) return;
                 const label = (labelEl.innerText || labelEl.textContent || '')
                     .trim().replace(/:$/, '');
-                const value = (valueEl.innerText || valueEl.textContent || '').trim();
+                const valueRoot = container.cloneNode(true);
+                valueRoot.querySelector('.label')?.remove();
+                const value = (valueRoot.innerText || valueRoot.textContent || '').trim();
                 if (label && value) fields[label] = value;
             });
             return fields;
