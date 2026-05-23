@@ -150,6 +150,27 @@ All scores are in [0, 1]. Keywords are tunable — edit `config/roles.yaml` and 
 
 ---
 
+## Customizing roles
+
+Edit `config/roles.yaml` to add or remove keywords for any role, then rerun scoring:
+
+```yaml
+software:
+  keywords:
+    - Python
+    - Kubernetes
+    - distributed systems
+    - quant        # add anything relevant to your background
+```
+
+```bash
+make score
+```
+
+This re-scores all postings in under a second. No re-scraping or re-embedding needed.
+
+---
+
 ## Refreshing postings
 
 `make scrape` is resumable and skips job IDs already in `data/postings.jsonl`. To force a full refresh after changing the scraper or parser:
