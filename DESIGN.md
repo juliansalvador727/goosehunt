@@ -187,6 +187,8 @@ This rewards postings whose semantic content is similar to your resume's content
 
 Re-scoring after updating your resume takes <1s. The classifier and the resume scorer are decoupled: `make score` runs both, but you can rerun the resume scorer alone after editing your resume.
 
+`resume.pdf` is a required input for resume scoring. `scripts/preflight.py` checks for it before `make run`, `make pipeline`, `make score`, and Docker startup so those workflows fail early with a clear message instead of after the expensive scrape/embed steps. The same preflight checks for `data/postings.jsonl` before pipeline and Docker runs.
+
 ### Why semantic over TF-IDF
 
 TF-IDF rewards literal vocabulary overlap. Brittle for roles where titles vary wildly across companies and the relevant signal is conceptual, not lexical. Embeddings capture semantic similarity even with no shared tokens. The semantic scorer complements the keyword classifier instead of duplicating it.
@@ -280,6 +282,7 @@ Two-pane layout: compact sortable table on the left, sticky detail panel on the 
 - Apply by chips (Email, Link): filter to postings that require applying by email or external URL. Stacks with role filters. Both are enabled by default, so `apply_method = "ww"` postings are hidden in the current UI.
 - Posting count: shows `filtered / total`.
 - Ctrl+K button: opens the command palette.
+- Day/Night button: toggles the CSS variable palette and persists the selected theme in `localStorage`.
 
 **Table:**
 
@@ -314,6 +317,11 @@ Two-pane layout: compact sortable table on the left, sticky detail panel on the 
 
 Searchable list of all actions: sort by any column, toggle any filter, copy job ID/email, clear search and filters.
 
+**Error states:**
+
+- If `/api/postings` cannot load the SQLite database or postings table, the UI shows the API error instead of staying in a loading state.
+- If postings load but all `score_resume` values are empty, the UI shows a warning that resume scores are unavailable and tells the user to add `resume.pdf` and rerun scoring.
+
 ---
 
 ## Docker
@@ -331,10 +339,10 @@ Searchable list of all actions: sort by any column, toggle any filter, copy job 
 `docker-entrypoint.sh` runs the full pipeline on every container start, then hands off to uvicorn:
 
 ```
-ingest → embed_postings → scorer → embed_resume → uvicorn
+preflight → ingest → embed_postings → scorer → embed_resume → uvicorn
 ```
 
-All pipeline steps are idempotent, so re-running them on an already-populated DB is fast (seconds). The `exec` before uvicorn ensures it gets PID 1 and receives signals cleanly.
+The preflight step fails early if `resume.pdf` or `data/postings.jsonl` is missing or invalid. All pipeline steps after that are idempotent, so re-running them on an already-populated DB is fast (seconds). The `exec` before uvicorn ensures it gets PID 1 and receives signals cleanly.
 
 ### Scraper constraint
 

@@ -43,6 +43,30 @@
         --mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
         --sans: "Inter", system-ui, -apple-system, sans-serif;
       }
+      body.light {
+        --bg: #eceff7;
+        --s1: #f8faff;
+        --s2: #eef2fb;
+        --s3: #e2e8f4;
+        --bd: #d7deec;
+        --bd2: #bac6da;
+        --tx: #111827;
+        --tx2: #596579;
+        --tx3: #8a96aa;
+        --ac: #3b82f6;
+        --ac-bg: rgba(59, 130, 246, 0.1);
+        --green: hsl(144, 58%, 27%);
+        --amber: #b45309;
+      }
+      body.light .kw-hw {
+        background: rgba(21, 128, 61, 0.13);
+        color: #14532d;
+        border-color: rgba(21, 128, 61, 0.24);
+      }
+      body.light .cp-btn.ok {
+        color: #14532d;
+        border-color: rgba(21, 128, 61, 0.34);
+      }
 
       html,
       body {
@@ -357,6 +381,10 @@
         border-color: var(--bd2);
         color: var(--tx2);
       }
+      .theme-btn {
+        min-width: 46px;
+        justify-content: center;
+      }
 
       /* ── workspace ────────────────────────────────────────────── */
       #workspace {
@@ -511,6 +539,24 @@
         height: 120px;
         color: var(--tx3);
         font-size: 12px;
+      }
+      .notice {
+        margin: 10px 12px;
+        padding: 9px 11px;
+        border: 1px solid var(--bd2);
+        border-radius: 7px;
+        background: var(--s2);
+        color: var(--tx2);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+      .notice.warn {
+        border-color: rgba(245, 158, 11, 0.28);
+        color: #fbbf24;
+      }
+      .notice.err {
+        border-color: rgba(239, 68, 68, 0.32);
+        color: #fca5a5;
       }
 
       /* loading spinner text */
@@ -800,7 +846,12 @@
     </style>
   </head>
 
-  <body x-data="app()" x-init="init()" @keydown.window="onKey($event)">
+  <body
+    x-data="app()"
+    x-init="init()"
+    :class="{light: theme === 'day'}"
+    @keydown.window="onKey($event)"
+  >
     <!-- ── command palette ────────────────────────────────────────── -->
     <div id="pal-overlay" x-show="pal" x-cloak @click.self="pal=false">
       <div id="palette">
@@ -913,11 +964,17 @@
       <div class="topbar-r">
         <span
           class="count"
-          x-text="postings.length ? 'showing ' + filtered.length + ' of ' + postings.length + ' jobs' : 'loading…'"
+          x-text="loading ? 'loading…' : postings.length ? 'showing ' + filtered.length + ' of ' + postings.length + ' jobs' : 'no jobs'"
         ></span>
         <button class="pal-btn" @click="_openPal()" title="Command palette">
           Ctrl+K
         </button>
+        <button
+          class="pal-btn theme-btn"
+          @click="toggleTheme()"
+          :title="theme === 'day' ? 'Switch to night mode' : 'Switch to day mode'"
+          x-text="theme === 'day' ? 'Night' : 'Day'"
+        ></button>
       </div>
     </div>
 
@@ -925,9 +982,18 @@
     <div id="workspace">
       <!-- list pane -->
       <div id="list-pane">
-        <div x-show="!postings.length" class="loading">Loading postings…</div>
+        <div x-show="loading" class="loading">Loading postings…</div>
+        <div x-show="apiError" x-cloak class="notice err" x-text="apiError"></div>
+        <div
+          x-show="!loading && !apiError && resumeScoresUnavailable"
+          x-cloak
+          class="notice warn"
+        >
+          Resume scores are unavailable. Add <code>resume.pdf</code> and run
+          <code>make score</code> or <code>make pipeline</code>.
+        </div>
 
-        <div id="tbl-scroll" x-show="postings.length">
+        <div id="tbl-scroll" x-show="!loading && postings.length">
           <table>
             <thead>
               <tr>
@@ -1266,6 +1332,9 @@
         return {
           postings: [],
           filtered: [],
+          loading: true,
+          apiError: "",
+          theme: "night",
           search: "",
           sortCol: "score_resume",
           sortDir: -1,
@@ -1301,11 +1370,37 @@
               : null;
           },
 
+          get resumeScoresUnavailable() {
+            return (
+              this.postings.length > 0 &&
+              this.postings.every((p) => p.score_resume == null)
+            );
+          },
+
           async init() {
-            const r = await fetch("/api/postings");
-            this.postings = await r.json();
-            this.applyFilters();
-            this._mkPal();
+            this.theme = localStorage.getItem("goosehunt.theme") || "night";
+            try {
+              const r = await fetch("/api/postings");
+              if (!r.ok) {
+                let detail = "Could not load postings.";
+                try {
+                  detail = (await r.json()).detail || detail;
+                } catch (_) {}
+                throw new Error(detail);
+              }
+              this.postings = await r.json();
+              this.applyFilters();
+              this._mkPal();
+            } catch (err) {
+              this.apiError = err?.message || "Could not load postings.";
+            } finally {
+              this.loading = false;
+            }
+          },
+
+          toggleTheme() {
+            this.theme = this.theme === "day" ? "night" : "day";
+            localStorage.setItem("goosehunt.theme", this.theme);
           },
 
           setBoard(id) {
@@ -1677,8 +1772,13 @@
             const n = isResume ? Math.min(val / 0.32, 1) : val;
             if (n < 0.15) return "color:var(--tx3)";
             if (n < 0.4) return "color:#6b7280";
+            const light = this.theme === "day";
             if (n < 0.65)
-              return "color:hsl(142,48%,52%);background:rgba(34,197,94,.06)";
+              return light
+                ? "color:#166534;background:rgba(21,128,61,.08)"
+                : "color:hsl(142,48%,52%);background:rgba(34,197,94,.06)";
+            if (light)
+              return "color:#052e16;background:rgba(21,128,61,.14)";
             return "color:hsl(142,68%,58%);background:rgba(34,197,94,.11)";
           },
 

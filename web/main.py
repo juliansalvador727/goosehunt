@@ -6,7 +6,7 @@ import sqlite3
 from pathlib import Path
 
 import yaml
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 
 DB_PATH = Path(__file__).parent.parent / "data" / "postings.db"
@@ -281,11 +281,23 @@ def extract_apply_info(raw_json: str) -> dict:
 
 @app.get("/api/postings")
 def get_postings() -> list[dict]:
+    if not DB_PATH.exists():
+        raise HTTPException(
+            status_code=503,
+            detail="Postings database not found. Run `make scrape && make pipeline` first.",
+        )
+
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            f"SELECT {', '.join(COLUMNS)} FROM postings"
-        ).fetchall()
+        try:
+            rows = conn.execute(
+                f"SELECT {', '.join(COLUMNS)} FROM postings"
+            ).fetchall()
+        except sqlite3.OperationalError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Postings database is not initialized. Run `make ingest` or `make pipeline` first.",
+            ) from exc
 
     result = []
     for r in rows:

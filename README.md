@@ -40,6 +40,8 @@ All `score_*` values are stored in SQLite and are in [0, 1]. `comp_score` is API
 
 ```
 goosehunt/
+├── docs/
+│   └── logo.png            # README logo
 ├── config/
 │   └── roles.yaml          # keyword lists for each role scorer
 ├── scraper/
@@ -60,6 +62,8 @@ goosehunt/
 │   ├── main.py             # FastAPI app + compensation/apply/keyword parsing
 │   └── static/
 │       └── index.html      # Alpine.js UI, no build step
+├── scripts/
+│   └── preflight.py        # required input checks for pipeline/Docker
 ├── data/
 │   ├── postings.jsonl      # scraper output (gitignored)
 │   ├── postings.db         # SQLite DB (gitignored)
@@ -69,6 +73,7 @@ goosehunt/
 ├── docker-compose.yml
 ├── docker-entrypoint.sh
 ├── .dockerignore
+├── LICENSE
 ├── Makefile
 └── requirements.txt
 ```
@@ -129,6 +134,8 @@ make scrape      # scrape only → data/postings.jsonl
 make pipeline    # ingest → embed → score (run after scrape)
 make serve       # start FastAPI on localhost:8000
 make scrape-diag # inspect page state, fetch one posting, write data/diag.md
+make check-resume # verify resume.pdf exists before scoring
+make check-inputs # verify resume.pdf + data/postings.jsonl exist before pipeline
 make test        # run unit tests (no browser)
 ```
 
@@ -152,6 +159,8 @@ cp /path/to/resume.pdf resume.pdf
 # then the pipeline runs automatically and the UI starts
 make run
 ```
+
+`resume.pdf` is required for `make run`, `make pipeline`, `make score`, and `docker compose up`. These commands preflight inputs before doing expensive work and fail with a direct message if the resume or scraped JSONL is missing.
 
 On subsequent runs where you just want to re-serve existing data:
 
@@ -195,6 +204,8 @@ The UI lives in `web/static/index.html` and is served by FastAPI from `web/main.
 - Table: sortable title/org/location/due/resume/role/pay/openings columns, click-to-copy job IDs.
 - Detail panel: score grid, apply link/email, copy buttons, keyword-hit chips, summary/responsibilities/required skills.
 - Keyboard: `j`/`k` navigate, `/` focuses search, `c` copies job ID, `m` copies email, `Shift+S` sorts by resume, `Shift+P` sorts by pay, `Ctrl+K` opens the command palette.
+- Theme toggle: a Day/Night button beside `Ctrl+K` switches palettes and persists the choice in the browser.
+- Missing resume scores: if the server can load postings but every `score_resume` value is empty, the UI shows a warning telling you to add `resume.pdf` and rerun scoring.
 
 ---
 
@@ -206,6 +217,7 @@ The UI lives in `web/static/index.html` and is served by FastAPI from `web/main.
 - Scoring: implemented for four role keyword scores plus resume cosine similarity.
 - API/UI: implemented with FastAPI + Alpine.js, request-time compensation/apply/keyword enrichment.
 - Docker: implemented for pipeline + serving only; scraping still runs locally.
+- Preflight checks: implemented for missing `resume.pdf` and missing scraped JSONL before pipeline/scoring/Docker startup.
 
 ---
 

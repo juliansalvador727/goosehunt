@@ -1,5 +1,6 @@
 #!/bin/sh
 set -e
+python scripts/preflight.py --resume --jsonl
 python db/ingest.py
 python -m embed.embed_postings
 python classifier/scorer.py
