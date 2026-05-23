@@ -296,14 +296,14 @@ Two-pane layout: compact sortable table on the left, sticky detail panel on the 
 | `/`      | Focus search            |
 | `Esc`    | Blur search             |
 | `c`      | Copy selected job ID    |
-| `e`      | Copy apply email        |
+| `m`      | Copy apply email        |
 | `Shift+S` | Sort by resume score   |
 | `Shift+P` | Sort by pay            |
 | `Ctrl+K` | Open command palette    |
 
 **Detail panel:**
 
-- Title, company, location, deadline, pay in the header.
+- Title, company, location, due date, pay in the header.
 - Score grid: one box per role + resume + pay, color-coded.
 - Apply row with one-click copy for email jobs or direct link for external applications.
 - WaterlooWorks-only postings, if surfaced by changing filters/UI, link back to the Employer Direct jobs page.

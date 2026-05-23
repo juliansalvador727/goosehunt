@@ -192,9 +192,9 @@ The UI lives in `web/static/index.html` and is served by FastAPI from `web/main.
 - Board dropdown: currently useful for Employer Direct data; the scraper writes `board_type = "direct"`.
 - Filters: search, role chips (`SWE`, `AI/ML`, `FW`, `HW`), and apply-by chips (`Email`, `Link`).
 - Default apply filter: Email and Link are enabled; WaterlooWorks-only postings (`apply_method = "ww"`) are intentionally hidden unless the UI is changed to expose that method.
-- Table: sortable title/org/location/deadline/resume/role/pay/openings columns, click-to-copy job IDs.
+- Table: sortable title/org/location/due/resume/role/pay/openings columns, click-to-copy job IDs.
 - Detail panel: score grid, apply link/email, copy buttons, keyword-hit chips, summary/responsibilities/required skills.
-- Keyboard: `j`/`k` navigate, `/` focuses search, `c` copies job ID, `e` copies email, `Shift+S` sorts by resume, `Shift+P` sorts by pay, `Ctrl+K` opens the command palette.
+- Keyboard: `j`/`k` navigate, `/` focuses search, `c` copies job ID, `m` copies email, `Shift+S` sorts by resume, `Shift+P` sorts by pay, `Ctrl+K` opens the command palette.
 
 ---
 
@@ -206,3 +206,62 @@ The UI lives in `web/static/index.html` and is served by FastAPI from `web/main.
 - Scoring: implemented for four role keyword scores plus resume cosine similarity.
 - API/UI: implemented with FastAPI + Alpine.js, request-time compensation/apply/keyword enrichment.
 - Docker: implemented for pipeline + serving only; scraping still runs locally.
+
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
+
+---
+
+## Terms and Use Notice
+
+### Mission
+
+goosehunt is a personal tool for making WaterlooWorks job browsing faster, clearer, and easier to prioritize. It replaces scattered manual review with a local workflow for scraping visible postings, searching and filtering them, estimating relevance, and comparing jobs against a resume.
+
+This project is not affiliated with, endorsed by, or operated by the University of Waterloo, WaterlooWorks, Orbis, or any employer listed in WaterlooWorks.
+
+### Services
+
+goosehunt provides a local interface for reviewing job postings that the user can already access through their own WaterlooWorks session.
+
+The app currently supports:
+
+- Scraping the user's currently visible Employer Direct results after manual login.
+- Storing scraped posting data locally in `data/postings.jsonl` and `data/postings.db`.
+- Filtering, sorting, and reviewing jobs in a local FastAPI/Alpine.js web UI.
+- Computing local keyword scores, resume-similarity scores, compensation estimates, application method details, and matched keyword hits.
+
+goosehunt does not provide hosted access to private job boards. It does not bypass login, Duo, permissions, or WaterlooWorks access controls. The scraper runs through the user's own browser session and starts only after the user manually logs in, navigates to the relevant board, applies any desired filters, and confirms that listings are visible.
+
+### User responsibility
+
+Users are responsible for how they run this software.
+
+Before scraping or storing job posting information, users should review and comply with all applicable rules, contracts, website terms, platform policies, employer restrictions, university policies, and laws that apply to the source of the postings. If WaterlooWorks or another job board prohibits automated scraping, bulk downloading, caching, redistribution, or derivative use of posting data, users should not use goosehunt in a way that violates those restrictions.
+
+This repository only provides software. It does not grant permission to access, copy, store, redistribute, or reuse any third-party job posting content.
+
+### Copyright and posting content
+
+Job postings may contain content owned by employers, WaterlooWorks, Orbis, the University of Waterloo, or other third parties. goosehunt is intended for personal, local review of postings that the user is authorized to view. Users should not publish, share, sell, or redistribute scraped posting data unless they have the right to do so.
+
+Any reliance on private study, research, fair dealing, fair use, or similar copyright exceptions is the user's responsibility to evaluate. This project does not provide legal advice and does not assume liability for a user's copying, storage, or use of posting content.
+
+### Data and privacy
+
+goosehunt is local-first:
+
+- Scraped job data is written to local files under `data/`.
+- Resume data is read from the local `resume.pdf`.
+- Posting embeddings and scores are stored in the local SQLite database.
+- The web UI is served locally by default at `http://localhost:8000`.
+- No scraped postings are sent to a goosehunt server because this project does not operate one.
+
+The embedding model is downloaded from HuggingFace when needed, and frontend dependencies such as Alpine.js and fonts may be loaded from their configured CDNs by the browser. Users who need stricter offline or privacy guarantees should vendor those assets locally and review dependency behavior before use.
+
+### No warranty
+
+goosehunt is provided as-is, without warranty. Scraping logic, score calculations, compensation parsing, deadline parsing, and application-method detection may be incomplete or wrong. Users should verify important details in WaterlooWorks or with the employer before making application decisions.

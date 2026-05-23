@@ -972,7 +972,7 @@
                   @click="srt('deadline_iso')"
                   :class="{sk:sortCol==='deadline_iso'}"
                 >
-                  DL
+                  DUE
                   <i
                     class="sa"
                     :class="{on:sortCol==='deadline_iso'}"
@@ -1046,7 +1046,7 @@
                   <td
                     class="dc"
                     :class="{urg: isUrgent(p.deadline_iso)}"
-                    x-text="fmtDL(p.deadline_iso)"
+                    x-text="fmtDue(p.deadline_iso)"
                   ></td>
                   <td
                     class="sc"
@@ -1113,7 +1113,7 @@
               <span
                 class="dln"
                 :class="{urg: isUrgent(selPosting.deadline_iso)}"
-                x-text="fmtDLFull(selPosting.deadline_iso)"
+                x-text="fmtDueFull(selPosting.deadline_iso)"
               ></span>
               <template x-if="selPosting.comp_hourly">
                 <span class="dp-sep">·</span>
@@ -1189,7 +1189,7 @@
                   class="cp-btn"
                   :class="{ok: cpEmail_}"
                   @click="cpEmail(selPosting.apply_email)"
-                  x-text="cpEmail_ ? '✓ Copied' : 'e'"
+                  x-text="cpEmail_ ? '✓ Copied' : 'm'"
                 ></button>
               </template>
             </div>
@@ -1431,7 +1431,7 @@
               this._nav(-1);
             }
             if (e.key === "c" && this.selId) this.cpId(this.selId);
-            if (e.key === "e" && this.selPosting?.apply_email)
+            if (e.key === "m" && this.selPosting?.apply_email)
               this.cpEmail(this.selPosting.apply_email);
             if (e.key === "S") {
               e.preventDefault();
@@ -1499,7 +1499,7 @@
               {
                 id: "sdl",
                 cat: "sort",
-                label: "Sort by Deadline",
+                label: "Sort by Due",
                 fn: s("deadline_iso"),
               },
               {
@@ -1625,9 +1625,9 @@
                 },
               },
               {
-                id: "ke",
+                id: "km",
                 cat: "keys",
-                label: "e  —  copy apply email",
+                label: "m  —  copy apply email",
                 fn: () => {
                   if (this.selPosting?.apply_email)
                     this.cpEmail(this.selPosting.apply_email);
@@ -1695,7 +1695,7 @@
             return "$" + h.toFixed(0) + "/h";
           },
 
-          fmtDL(iso) {
+          fmtDue(iso) {
             if (!iso) return "—";
             return new Date(iso).toLocaleDateString("en-CA", {
               month: "short",
@@ -1703,7 +1703,7 @@
             });
           },
 
-          fmtDLFull(iso) {
+          fmtDueFull(iso) {
             if (!iso) return "—";
             return new Date(iso).toLocaleDateString("en-CA", {
               month: "short",
