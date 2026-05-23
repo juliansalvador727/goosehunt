@@ -13,9 +13,13 @@ firmware:
     - RTOS
     - FreeRTOS
     - Zephyr
+    - C/C++
+    - C language
     - embedded C
     - embedded C++
     - device driver
+    - Linux drivers
+    - device tree
     - interrupt handler
     - interrupt service routine
     - ISR
@@ -27,12 +31,19 @@ firmware:
     - nRF
     - hardware abstraction layer
     - HAL
+    - JTAG
+    - SWD
     - peripheral
     - SPI
     - I2C
     - UART
     - CAN bus
+    - Bluetooth
+    - BLE
+    - Wi-Fi
+    - MQTT
     - DMA
+    - logic analyzer
     - register-level
     - bring-up
     - board bring-up
@@ -83,10 +94,25 @@ hardware:
     - synthesis
     - place and route
     - power electronics
+    - power integrity
     - hardware design
     - electronics
     - PCB layout
     - logic analyzer
+    - Cadence
+    - Vivado
+    - Quartus
+    - SPICE
+    - LTspice
+    - DFT
+    - verification
+    - UVM
+    - timing closure
+    - EMI
+    - EMC
+    - thermal
+    - validation
+    - bringup
 
 software:
   keywords:
@@ -100,22 +126,36 @@ software:
     - full-stack
     - web development
     - REST API
+    - GraphQL
+    - Django
+    - Flask
+    - FastAPI
+    - Spring
     - microservices
     - distributed systems
     - Python
     - Java
     - Golang
+    - Go
+    - Rust
     - TypeScript
     - React
     - Node.js
     - Kubernetes
     - Docker
     - AWS
+    - PostgreSQL
+    - Redis
+    - Kafka
+    - Terraform
     - cloud
     - database
     - SQL
     - system design
     - CI/CD
+    - observability
+    - monitoring
+    - unit tests
 
 ai_ml:
   keywords:
@@ -139,11 +179,22 @@ ai_ml:
     - data science
     - PyTorch
     - TensorFlow
+    - scikit-learn
+    - pandas
+    - NumPy
+    - CUDA
     - JAX
+    - LangChain
+    - LlamaIndex
+    - agents
     - transformer
     - diffusion model
     - model training
+    - evaluation
     - inference
+    - model serving
+    - ONNX
+    - vLLM
     - fine-tuning
     - RAG
     - embedding
@@ -151,5 +202,7 @@ ai_ml:
     - MLOps
     - model deployment
     - feature engineering
-
+    - time series
+    - recommendation
+    - ranking
 
