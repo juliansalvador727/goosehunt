@@ -1020,13 +1020,13 @@
         <label class="chip" :class="{on: fLink}">
           <input type="checkbox" x-model="fLink" @change="applyFilters()" />Link
         </label>
+        <label class="chip" :class="{on: fWw}">
+          <input type="checkbox" x-model="fWw" @change="applyFilters()" />WW
+        </label>
       </div>
 
       <div class="topbar-r">
-        <span
-          class="count"
-          x-text="loading ? 'loading…' : postings.length ? 'showing ' + filtered.length + ' of ' + postings.length + ' jobs' : 'no jobs'"
-        ></span>
+        <span class="count" x-text="jobCountLabel"></span>
         <button class="pal-btn" @click="_openPal()" title="Command palette">
           Ctrl+K
         </button>
@@ -1222,15 +1222,15 @@
               </template>
             </tbody>
           </table>
-          <template x-if="postings.length && !fEmail && !fLink">
+          <template x-if="boardPostings.length && !fEmail && !fLink && !fWw">
             <div class="empty-list">
-              Select Apply
-              by&nbsp;<strong>Email</strong>,&nbsp;<strong>Link</strong>, or
-              both to see postings
+              Select Apply by&nbsp;<strong>Email</strong>,
+              <strong>Link</strong>, <strong>WW</strong>, or any combination to
+              see postings
             </div>
           </template>
           <template
-            x-if="postings.length && (fEmail || fLink) && !filtered.length"
+            x-if="boardPostings.length && (fEmail || fLink || fWw) && !filtered.length"
           >
             <div class="empty-list">No postings match the current filters</div>
           </template>
@@ -1450,6 +1450,7 @@
           },
           fEmail: true,
           fLink: true,
+          fWw: true,
           cpId_: null,
           cpEmail_: false,
           // palette
@@ -1470,6 +1471,17 @@
               this.postings.length > 0 &&
               this.postings.every((p) => p.score_resume == null)
             );
+          },
+
+          get boardPostings() {
+            return this.postings.filter((p) => p.board_type === this.board);
+          },
+
+          get jobCountLabel() {
+            if (this.loading) return "loading…";
+            const n = this.boardPostings.length;
+            if (!n) return "no jobs";
+            return `showing ${this.filtered.length} of ${n} jobs`;
           },
 
           async init() {
@@ -1546,14 +1558,15 @@
                 active.some((r) => (p["score_" + r] ?? 0) > 0),
               );
             }
-            if (!this.fEmail && !this.fLink) {
+            if (!this.fEmail && !this.fLink && !this.fWw) {
               this.filtered = [];
               return;
             }
             rows = rows.filter(
               (p) =>
                 (this.fEmail && p.apply_method === "email") ||
-                (this.fLink && p.apply_method === "link"),
+                (this.fLink && p.apply_method === "link") ||
+                (this.fWw && p.apply_method === "ww"),
             );
             const col = this.sortCol,
               dir = this.sortDir;
@@ -1752,6 +1765,12 @@
                 fn: f(() => (this.fLink = !this.fLink)),
               },
               {
+                id: "fww",
+                cat: "filter",
+                label: "Toggle WW filter",
+                fn: f(() => (this.fWw = !this.fWw)),
+              },
+              {
                 id: "ffw",
                 cat: "filter",
                 label: "Toggle Firmware filter",
@@ -1800,6 +1819,7 @@
                   this.roleList.forEach((r) => (this.roles[r] = false));
                   this.fEmail = true;
                   this.fLink = true;
+                  this.fWw = true;
                 }),
               },
               {

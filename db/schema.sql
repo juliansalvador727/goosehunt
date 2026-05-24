@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS postings (
     deadline_iso      TEXT,
     work_term         TEXT,
     openings          INTEGER,
+    apps_count        INTEGER,
     summary           TEXT,
     responsibilities  TEXT,
     required_skills   TEXT,
