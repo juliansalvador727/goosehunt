@@ -4,7 +4,7 @@
 
 # goosehunt
 
-A personal tool for UWaterloo co-op students that turns the WaterlooWorks Employer Direct board into a ranked, filterable local UI — scored against your resume and classified by role.
+A personal tool for UWaterloo co-op students that turns WaterlooWorks job boards (Employer Direct and Full Cycle Service) into a ranked, filterable local UI — scored against your resume and classified by role.
 
 > **Personal use only.** WaterlooWorks ToS likely prohibits automated scraping. Use at your own risk.
 
@@ -12,7 +12,7 @@ A personal tool for UWaterloo co-op students that turns the WaterlooWorks Employ
 
 ## What it does
 
-1. **Scrapes** your currently visible Employer Direct results using Playwright. You log in manually, set your filters and work term in WaterlooWorks, then press Enter — the scraper does the rest.
+1. **Scrapes** your currently visible WaterlooWorks results using Playwright (Employer Direct or Full Cycle). You log in manually, set your filters and work term, then press Enter — the scraper does the rest.
 2. **Stores** every posting in a local SQLite database. Resumable: a crashed scrape picks up where it left off.
 3. **Classifies** each posting against four role types (SWE, AI/ML, firmware, hardware) using tunable keyword lists in `config/roles.yaml`.
 4. **Scores** each posting against your resume PDF using cosine similarity on sentence embeddings.
@@ -42,10 +42,11 @@ cp /path/to/resume.pdf resume.pdf
 ## First run
 
 ```bash
-make run
+make run                  # Employer Direct (default)
+make run BOARD=full_cycle # Full Cycle Service
 ```
 
-This opens a Chromium window. Log in to WaterlooWorks (Duo if prompted), navigate to the Employer Direct board, set your work term and filters, wait for job listings to appear, then press Enter in the terminal. The scraper runs, the pipeline processes everything, and the UI starts at `http://localhost:8000`.
+This opens a Chromium window. Log in to WaterlooWorks (Duo if prompted), navigate to the board you chose, set your work term and filters, wait for job listings to appear, then press Enter in the terminal. The scraper runs, the pipeline processes everything, and the UI starts at `http://localhost:8000`.
 
 On subsequent runs where you just want to re-serve existing data:
 
@@ -56,7 +57,7 @@ make serve
 To re-scrape and reprocess without restarting the server:
 
 ```bash
-make scrape && make pipeline
+make scrape BOARD=full_cycle && make pipeline
 ```
 
 ---
@@ -81,13 +82,14 @@ docker compose up
 
 ```
 make install     # create venv, install deps, install Chromium
-make run         # scrape + pipeline + serve (full end-to-end)
-make scrape      # scrape only → data/postings.jsonl
+make run         # scrape + pipeline + serve (BOARD=direct by default)
+make scrape      # scrape only → data/postings.jsonl (BOARD=direct|full_cycle)
 make pipeline    # ingest → embed → score (run after scrape)
 make serve       # start FastAPI on localhost:8000
 make test        # run unit tests (no browser required)
-make scrape-diag # fetch one posting, dump raw HTML + parsed fields to data/diag.md
 ```
+
+Set `BOARD=full_cycle` on `make run` or `make scrape` for the Full Cycle board.
 
 Individual pipeline steps: `make ingest`, `make embed`, `make score`.
 

@@ -1,46 +1,103 @@
 #!/usr/bin/env python3
 """
-goosehunt scraper — WaterlooWorks Employer Direct.
+goosehunt scraper — WaterlooWorks job boards (Employer Direct, Full Cycle).
 
 Uses WW's in-page JS API (credit: bryanling1/waterlooworks-scraper):
   1. Extract the 'action' key embedded in the page's JS.
-  2. POST to the listing endpoint (100 per page) to collect all job IDs.
+  2. POST to the listing endpoint (100 per page) to collect job IDs + list metadata.
   3. Call window.getPostingOverview(jobId, cb) for each job → HTML string.
   4. Parse HTML in-memory; no new tabs opened.
 
 Usage:
-  python -m scraper.scraper        # full scrape
-  python -m scraper.scraper --diag # inspect page state, try one posting, exit
+  python -m scraper.scraper --board direct       # Employer Direct (default)
+  python -m scraper.scraper --board full_cycle   # Full Cycle Service
 """
 
+from __future__ import annotations
+
+import argparse
 import asyncio
 import json
 import random
 import re
 import sys
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import async_playwright
+
+LISTING_READY_SELECTOR = (
+    "table.data-viewer-table, "
+    "input[name='dataViewerSelection'], "
+    "tr.table__row--body"
+)
 
 ROOT = Path(__file__).parent.parent
 PROFILE_DIR = Path(__file__).parent / "profile"
 DATA_DIR = ROOT / "data"
 OUTPUT_FILE = DATA_DIR / "postings.jsonl"
 
-BOARD_TYPE = "direct"
+
+@dataclass(frozen=True)
+class BoardConfig:
+    board_type: str
+    label: str
+    list_columns: tuple[str, ...]
+
+
+BOARDS: dict[str, BoardConfig] = {
+    "direct": BoardConfig(
+        board_type="direct",
+        label="Employer Direct",
+        list_columns=(
+            "work_term", "title", "org", "division", "openings",
+            "location", "level", "deadline",
+        ),
+    ),
+    "full_cycle": BoardConfig(
+        board_type="full_cycle",
+        label="Full Cycle Service",
+        list_columns=(
+            "title", "org", "division", "openings", "location",
+            "level", "apps_count", "deadline",
+        ),
+    ),
+}
 
 FIELD_MAP: dict[str, list[str]] = {
     "title":            ["job title", "position title", "title"],
-    "org":              ["organization", "employer", "company name"],
+    "org":              ["organization", "employer", "company name", "org"],
     "location":         ["job - city", "city", "region", "work location", "location"],
     "deadline":         ["deadline", "application deadline", "apply by"],
     "work_term":        ["work term", "term", "co-op term"],
-    "openings":         ["openings", "number of positions", "positions available"],
+    "openings":         ["openings", "number of positions", "positions available",
+                         "number of job openings"],
+    "division":         ["division"],
+    "level":            ["level"],
     "summary":          ["job summary", "summary", "overview", "job description", "description"],
     "responsibilities": ["job responsibilities", "responsibilities", "duties", "key responsibilities"],
     "required_skills":  ["required skills", "skills required", "qualifications", "technical skills"],
 }
+
+# List-column keys → FIELD_MAP column when names differ
+_LIST_KEY_ALIASES: dict[str, str] = {
+    "apps_count": "apps",
+}
+
+
+# ── CLI ───────────────────────────────────────────────────────────────────────
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Scrape WaterlooWorks job postings.")
+    parser.add_argument(
+        "--board",
+        choices=sorted(BOARDS.keys()),
+        default="direct",
+        help="Which WW board to scrape (default: direct)",
+    )
+    return parser.parse_args(argv)
 
 
 # ── File I/O ──────────────────────────────────────────────────────────────────
@@ -102,17 +159,86 @@ def pick_field(fields: dict[str, str], candidates: list[str]) -> str:
     return ""
 
 
-def build_row(job_id: str, board_type: str, fields: dict[str, str], now: str) -> dict:
+def _merge_fields(
+    detail_fields: dict[str, str],
+    list_meta: dict[str, str] | None,
+) -> dict[str, str]:
+    """Merge list grid metadata with detail fields; detail wins on conflict."""
+    merged: dict[str, str] = {}
+    if list_meta:
+        for key, value in list_meta.items():
+            if value:
+                merged[key] = value
+                alias = _LIST_KEY_ALIASES.get(key)
+                if alias:
+                    merged[alias] = value
+    for key, value in detail_fields.items():
+        if value:
+            merged[key] = value
+    return merged
+
+
+def build_row(
+    job_id: str,
+    board_type: str,
+    fields: dict[str, str],
+    now: str,
+    list_meta: dict[str, str] | None = None,
+) -> dict:
+    merged = _merge_fields(fields, list_meta)
     row: dict = {
         "job_id": job_id,
         "board_type": board_type,
-        "raw_fields_json": json.dumps(fields),
+        "raw_fields_json": json.dumps(merged),
         "scraped_at": now,
         "updated_at": now,
     }
     for col, candidates in FIELD_MAP.items():
-        row[col] = pick_field(fields, candidates)
+        row[col] = pick_field(merged, candidates)
+    apps = merged.get("apps_count") or merged.get("apps") or ""
+    if apps:
+        row["apps_count"] = apps
     return row
+
+
+def _cell_text(cell_html: str) -> str:
+    text = re.sub(r"<[^>]+>", " ", cell_html)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def parse_list_rows(html: str, config: BoardConfig) -> dict[str, dict[str, str]]:
+    """Parse DataViewer listing HTML into job_id → list-column metadata."""
+    results: dict[str, dict[str, str]] = {}
+    row_pattern = re.compile(
+        r'<tr[^>]*class="[^"]*table__row--body[^"]*"[^>]*>(.*?)</tr>',
+        re.DOTALL | re.IGNORECASE,
+    )
+    td_pattern = re.compile(
+        r'<td[^>]*class="[^"]*table__value[^"]*"[^>]*>(.*?)</td>',
+        re.DOTALL | re.IGNORECASE,
+    )
+    for row_match in row_pattern.finditer(html):
+        row_html = row_match.group(1)
+        chk = re.search(
+            r'name=["\']dataViewerSelection["\'][^>]*value=["\'](\d{5,})["\']',
+            row_html,
+            re.IGNORECASE,
+        ) or re.search(
+            r'value=["\'](\d{5,})["\'][^>]*name=["\']dataViewerSelection["\']',
+            row_html,
+            re.IGNORECASE,
+        ) or re.search(r'id=["\']resultRow_(\d{5,})["\']', row_html, re.IGNORECASE)
+        if not chk:
+            continue
+        job_id = chk.group(1)
+        cells = [_cell_text(m.group(1)) for m in td_pattern.finditer(row_html)]
+        meta: dict[str, str] = {}
+        for i, col in enumerate(config.list_columns):
+            if i < len(cells) and cells[i]:
+                meta[col] = cells[i]
+        if meta:
+            results[job_id] = meta
+    return results
 
 
 def extract_ids_from_html(html: str) -> list[str]:
@@ -125,6 +251,8 @@ def extract_ids_from_html(html: str) -> list[str]:
         r'getPostingData\((\d{5,})',
         r'getPostingOverview\((\d{5,})',
         r'jobId[="\s:\']+(\d{5,})',
+        r'name=["\']dataViewerSelection["\'][^>]*value=["\'](\d{5,})["\']',
+        r'value=["\'](\d{5,})["\'][^>]*name=["\']dataViewerSelection["\']',
     ]:
         for m in re.finditer(pattern, html, re.IGNORECASE):
             jid = m.group(1)
@@ -136,13 +264,89 @@ def extract_ids_from_html(html: str) -> list[str]:
 
 # ── Browser helpers ───────────────────────────────────────────────────────────
 
-async def wait_for_login(ctx) -> "Page":
+def _is_jobs_url(url: str) -> bool:
+    u = url.lower()
+    return (
+        "jobs.htm" in u
+        or "postings" in u
+        or "fullcycle" in u
+        or "full_cycle" in u
+        or "full-cycle" in u
+    )
+
+
+async def resolve_jobs_page(ctx):
+    """Pick the tab that has the job listing grid (URL or DOM)."""
+    for p in ctx.pages:
+        if _is_jobs_url(p.url):
+            return p
+    for p in reversed(ctx.pages):
+        try:
+            if await p.locator(LISTING_READY_SELECTOR).count() > 0:
+                return p
+        except PlaywrightError:
+            continue
+    return ctx.pages[-1] if ctx.pages else None
+
+
+async def wait_for_listing_ready(page, timeout_ms: int = 60_000) -> None:
+    """Wait until WW finishes loading / navigating to the listing view."""
+    print("[SCRAPER] Waiting for listings to settle...")
+    try:
+        await page.wait_for_load_state("domcontentloaded", timeout=timeout_ms)
+    except PlaywrightError:
+        pass
+    try:
+        await page.wait_for_load_state("networkidle", timeout=15_000)
+    except PlaywrightError:
+        pass  # WW often keeps long-polling; selector wait is enough
+    await page.wait_for_selector(LISTING_READY_SELECTOR, timeout=timeout_ms)
+    print("[SCRAPER] Listings ready.\n")
+
+
+async def evaluate_retry(
+    page,
+    expression: str,
+    arg=None,
+    *,
+    retries: int = 5,
+    delay: float = 1.5,
+):
+    """Run page.evaluate; retry if the SPA navigates and destroys the context."""
+    last_err: PlaywrightError | None = None
+    for attempt in range(1, retries + 1):
+        try:
+            if arg is None:
+                return await page.evaluate(expression)
+            return await page.evaluate(expression, arg)
+        except PlaywrightError as e:
+            last_err = e
+            msg = str(e).lower()
+            transient = (
+                "execution context was destroyed" in msg
+                or "navigation" in msg
+                or "target closed" in msg
+            )
+            if not transient or attempt >= retries:
+                raise
+            print(f"[SCRAPER] Page changed — retrying ({attempt}/{retries})...")
+            await asyncio.sleep(delay)
+            try:
+                await wait_for_listing_ready(page, timeout_ms=30_000)
+            except PlaywrightError:
+                await page.wait_for_load_state("domcontentloaded")
+    if last_err:
+        raise last_err
+    return None
+
+
+async def wait_for_login(ctx, config: BoardConfig):
     print()
     print("=" * 60)
     print("  MANUAL STEP REQUIRED")
     print("=" * 60)
     print("  1. Log in to WaterlooWorks (Duo if prompted).")
-    print("  2. Go to the Employer Direct board.")
+    print(f"  2. Go to the {config.label} board.")
     print("  3. Set ALL filters (work term, etc.).")
     print("  4. Make sure job listings are visible on screen.")
     print()
@@ -153,36 +357,38 @@ async def wait_for_login(ctx) -> "Page":
 
     input("  Press Enter when results are on screen... ")
 
-    # Use whichever tab has jobs.htm, otherwise fall back to the most recently created tab
-    for p in ctx.pages:
-        if "jobs.htm" in p.url or "postings" in p.url.lower():
-            print(f"  Using tab: {p.url}\n")
-            return p
+    page = await resolve_jobs_page(ctx)
+    if page is None:
+        raise RuntimeError("No browser tab available after login.")
 
-    page = ctx.pages[-1]
-    print(f"  No jobs.htm tab found — using active tab: {page.url}")
-    print("  (If the action key is missing, navigate to Employer Direct and re-run.)\n")
+    if not _is_jobs_url(page.url):
+        print(f"  Using tab (no jobs.htm in URL): {page.url}")
+        print(f"  (If scraping fails, open {config.label} and re-run.)\n")
+    else:
+        print(f"  Using tab: {page.url}\n")
+
+    await wait_for_listing_ready(page)
     return page
 
 
 async def get_action_key(page) -> str:
     """Extract the DataViewer action key from the page's embedded script tags."""
-    return await page.evaluate(r"""
+    result = await evaluate_retry(page, r"""
         () => {
             for (const script of document.querySelectorAll('script')) {
                 const t = script.textContent;
-                // Target the dataParams object's action property specifically
                 const m = t.match(/dataParams\s*:\s*\{[^}]*action\s*:\s*['"](_-_-[^'"]{20,})['"]/);
                 if (m) return m[1];
             }
             return '';
         }
-    """) or ""
+    """)
+    return result or ""
 
 
-async def fetch_page_of_ids(page, action: str, page_num: int) -> list[str]:
-    """POST to the WW DataViewer endpoint and return job IDs from that page."""
-    result = await page.evaluate("""
+async def fetch_listing_page(page, action: str, page_num: int) -> dict:
+    """POST to the WW DataViewer endpoint; return IDs and raw HTML when available."""
+    result = await evaluate_retry(page, """
         async ({action, pageNum}) => {
             const form = new FormData();
             form.append('action',       action);
@@ -200,17 +406,18 @@ async def fetch_page_of_ids(page, action: str, page_num: int) -> list[str]:
             });
             const text = await resp.text();
             try {
-                return {json: JSON.parse(text), text: null};
+                return {json: JSON.parse(text), text: text};
             } catch (e) {
                 return {json: null, text: text};
             }
         }
     """, {"action": action, "pageNum": page_num})
 
+    raw_text = result.get("text") or ""
+    ids: list[str] = []
+
     if result["json"] is not None:
         data = result["json"]
-        ids: list[str] = []
-        # DataViewer response: {data: [{id: "12345", ...}, ...]} or {rows: [...]}
         rows = data.get("data") or data.get("rows") or data.get("resultIds") or []
         if isinstance(rows, list):
             for item in rows:
@@ -221,46 +428,60 @@ async def fetch_page_of_ids(page, action: str, page_num: int) -> list[str]:
                 elif isinstance(item, (str, int)) and len(str(item)) >= 5:
                     ids.append(str(item))
         if not ids:
-            # Fall back to regex scan on the JSON text
-            ids = extract_ids_from_html(result["text"] or str(data))
-        return ids
+            ids = extract_ids_from_html(raw_text or str(data))
     else:
-        return extract_ids_from_html(result["text"] or "")
+        ids = extract_ids_from_html(raw_text)
+
+    return {"ids": ids, "html": raw_text or None}
 
 
-async def collect_all_job_ids(page) -> list[str]:
-    """Walk all pages of the listing; return every unique job ID."""
+async def collect_all_listings(page, config: BoardConfig) -> dict[str, dict[str, str]]:
+    """Walk all listing pages; return job_id → list metadata."""
     action = await get_action_key(page)
     if not action:
-        print("[COLLECT] WARNING: action key not found. Run --diag to troubleshoot.")
-        return []
+        print("[COLLECT] WARNING: action key not found. Confirm the job listing grid is visible on this tab.")
+        return {}
     print(f"[COLLECT] action key found ({len(action)} chars)")
 
-    all_ids: list[str] = []
-    seen: set[str] = set()
+    all_listings: dict[str, dict[str, str]] = {}
     page_num = 1
 
     while True:
         print(f"[COLLECT] page {page_num}...")
-        ids = await fetch_page_of_ids(page, action, page_num)
-        new_ids = [i for i in ids if i not in seen]
-        if not new_ids:
-            print(f"[COLLECT] no new IDs on page {page_num} — done.")
+        page_result = await fetch_listing_page(page, action, page_num)
+        page_listings = (
+            parse_list_rows(page_result["html"], config)
+            if page_result["html"]
+            else {}
+        )
+        prior_count = len(all_listings)
+
+        for jid in page_result["ids"]:
+            if jid not in all_listings:
+                all_listings[jid] = page_listings.get(jid, {})
+
+        for jid, meta in page_listings.items():
+            if jid not in all_listings:
+                all_listings[jid] = dict(meta)
+            else:
+                all_listings[jid].update(meta)
+
+        added = len(all_listings) - prior_count
+        if added == 0:
+            print(f"[COLLECT] no new listings on page {page_num} — done.")
             break
-        for jid in new_ids:
-            seen.add(jid)
-            all_ids.append(jid)
-        print(f"[COLLECT] +{len(new_ids)} (total: {len(all_ids)})")
+
+        print(f"[COLLECT] +{added} (total: {len(all_listings)})")
         page_num += 1
         await asyncio.sleep(random.uniform(0.5, 1.0))
 
-    return all_ids
+    return all_listings
 
 
 async def get_posting_overview(page, job_id: str) -> str | None:
     """Call window.getPostingOverview(jobId) → posting HTML string."""
     try:
-        return await page.evaluate("""
+        return await evaluate_retry(page, """
             (jobId) => new Promise((resolve, reject) => {
                 if (typeof window.getPostingOverview !== 'function') {
                     reject(new Error('getPostingOverview not defined on this page'));
@@ -270,14 +491,14 @@ async def get_posting_overview(page, job_id: str) -> str | None:
                 setTimeout(() => reject(new Error('timeout after 15s')), 15000);
             })
         """, job_id)
-    except Exception as e:
+    except PlaywrightError as e:
         print(f"[SCRAPE]   ERROR: {e}")
         return None
 
 
 async def parse_overview_html(page, html: str) -> dict[str, str]:
     """Inject overview HTML into a temp div, extract key-value pairs."""
-    return await page.evaluate("""
+    return await evaluate_retry(page, """
         (html) => {
             const div = document.createElement('div');
             div.innerHTML = html;
@@ -299,13 +520,13 @@ async def parse_overview_html(page, html: str) -> dict[str, str]:
 
 # ── Scrape loop ───────────────────────────────────────────────────────────────
 
-async def run_scrape(ctx, page) -> None:
-
-    all_ids = await collect_all_job_ids(page)
-    if not all_ids:
-        print("[SCRAPE] No job IDs found. Run --diag to troubleshoot.")
+async def run_scrape(ctx, page, config: BoardConfig) -> None:
+    listings = await collect_all_listings(page, config)
+    if not listings:
+        print("[SCRAPE] No job listings found. Confirm filters are set and listings are visible, then re-run.")
         return
 
+    all_ids = list(listings.keys())
     done = load_done()
     todo = [jid for jid in all_ids if jid not in done]
     print(f"\n[SCRAPE] {len(todo)} to scrape, {len(done)} already done.\n")
@@ -319,12 +540,15 @@ async def run_scrape(ctx, page) -> None:
             print("[SCRAPE]   skipped (no HTML returned).")
         else:
             fields = await parse_overview_html(page, html)
+            list_meta = listings.get(job_id, {})
             now = datetime.now(timezone.utc).isoformat()
-            row = build_row(job_id, BOARD_TYPE, fields, now)
+            row = build_row(job_id, config.board_type, fields, now, list_meta)
             append_output(row)
             title = row.get("title") or "(no title)"
-            org   = row.get("org")   or "(no org)"
-            print(f"[SCRAPE]   → {title} @ {org}")
+            org = row.get("org") or "(no org)"
+            apps = row.get("apps_count", "")
+            extra = f" apps={apps}" if apps else ""
+            print(f"[SCRAPE]   → {title} @ {org}{extra}")
             scraped += 1
 
         if i < len(todo):
@@ -335,132 +559,16 @@ async def run_scrape(ctx, page) -> None:
     print(f"\n[SCRAPE] Done. {scraped} scraped this run. Total: {len(load_done())}.")
 
 
-# ── Diagnostic ────────────────────────────────────────────────────────────────
-
-async def run_diag(ctx, page) -> None:
-    DIAG_FILE = DATA_DIR / "diag.md"
-    DATA_DIR.mkdir(exist_ok=True)
-    log_lines: list[str] = []
-
-    def log(s: str = "") -> None:
-        print(s)
-        log_lines.append(s)
-
-    def flush() -> None:
-        DIAG_FILE.write_text("\n".join(log_lines))
-        print(f"\n[DIAG] saved to {DIAG_FILE}")
-
-    log(f"# goosehunt diag — {datetime.now(timezone.utc).isoformat()}")
-    log()
-    log(f"## Page")
-    log(f"url: {page.url}")
-    log()
-
-    action = await get_action_key(page)
-    log(f"## Action key")
-    log(f"{'found (' + str(len(action)) + ' chars)' if action else 'NOT FOUND'}")
-    if action:
-        log(f"```")
-        log(action)
-        log(f"```")
-    log()
-
-    log(f"## Window functions")
-    for fn in ["getPostingOverview", "getPostingData", "orbisAppSr"]:
-        exists = await page.evaluate(f"() => typeof window.{fn} !== 'undefined'")
-        log(f"- window.{fn}: {'found' if exists else 'NOT FOUND'}")
-    log()
-
-    if not action:
-        log("Cannot proceed without action key.")
-        flush()
-        return
-
-    log(f"## Job IDs (page 1)")
-    ids = await fetch_page_of_ids(page, action, 1)
-    log(f"found: {len(ids)}")
-    log(f"sample: {ids[:8]}")
-    log()
-
-    if not ids:
-        log("No IDs found — raw POST response:")
-        raw = await page.evaluate("""
-            async (action) => {
-                const form = new FormData();
-                form.append('action', action);
-                form.append('page', '1');
-                form.append('itemsPerPage', '100');
-                form.append('isDataViewer', 'true');
-                const resp = await fetch(window.location.href, {method:'POST', body:form, credentials:'same-origin'});
-                return await resp.text();
-            }
-        """, action)
-        log("```")
-        log(raw[:5000])
-        log("```")
-        flush()
-        return
-
-    log(f"## getPostingOverview({ids[0]})")
-    html = await get_posting_overview(page, ids[0])
-    if html:
-        log(f"HTML length: {len(html)} chars")
-        log()
-        log("### Raw HTML (first 5000 chars)")
-        log("```html")
-        log(html[:5000])
-        log("```")
-        log()
-        rows_data = await page.evaluate("""
-            (html) => {
-                const div = document.createElement('div');
-                div.innerHTML = html;
-                const rows = [];
-                div.querySelectorAll('table tr').forEach(tr => {
-                    const cells = [];
-                    tr.querySelectorAll('td, th').forEach(td => {
-                        cells.push((td.innerText || td.textContent || '').trim());
-                    });
-                    if (cells.some(c => c.length > 0)) rows.push(cells);
-                });
-                return rows;
-            }
-        """, html)
-        log("### Table rows_data (all)")
-        log("```")
-        for r in rows_data:
-            log(str(r))
-        log("```")
-        log()
-        fields = await parse_overview_html(page, html)
-        log("### Parsed fields")
-        log("```")
-        for k, v in fields.items():
-            log(f"{k}: {v[:80]}")
-        log("```")
-    else:
-        log("No HTML returned.")
-        raw = await page.evaluate("""
-            (jobId) => new Promise((resolve) => {
-                if (typeof window.getPostingOverview !== 'function') { resolve('function not found'); return; }
-                window.getPostingOverview(jobId, (h) => resolve(h || '(empty)'));
-                setTimeout(() => resolve('(timeout)'), 10000);
-            })
-        """, ids[0])
-        log("```")
-        log(str(raw)[:1000])
-        log("```")
-
-    flush()
-
-
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 async def main() -> None:
+    args = parse_args()
+    config = BOARDS[args.board]
+
     DATA_DIR.mkdir(exist_ok=True)
     PROFILE_DIR.mkdir(exist_ok=True)
 
-    diag = "--diag" in sys.argv[1:]
+    print(f"[goosehunt] board: {config.label} ({config.board_type})")
 
     async with async_playwright() as pw:
         ctx = await pw.chromium.launch_persistent_context(
@@ -471,12 +579,10 @@ async def main() -> None:
         )
         page = ctx.pages[0] if ctx.pages else await ctx.new_page()
         await page.goto("https://waterlooworks.uwaterloo.ca/", wait_until="domcontentloaded")
-        jobs_page = await wait_for_login(ctx)
+        jobs_page = await wait_for_login(ctx, config)
+        await wait_for_listing_ready(jobs_page)
 
-        if diag:
-            await run_diag(ctx, jobs_page)
-        else:
-            await run_scrape(ctx, jobs_page)
+        await run_scrape(ctx, jobs_page, config)
 
         await ctx.close()
 

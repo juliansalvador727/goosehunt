@@ -6,8 +6,21 @@ Run: pytest scraper/test_scraper.py -v
 """
 
 import json
+from pathlib import Path
+
 import pytest
-from scraper.scraper import build_row, extract_ids_from_html, parse_table_rows, pick_field
+
+from scraper.scraper import (
+    BOARDS,
+    build_row,
+    extract_ids_from_html,
+    parse_list_rows,
+    parse_table_rows,
+    pick_field,
+)
+
+FIXTURES = Path(__file__).parent / "fixtures"
+FULL_CYCLE_LIST_HTML = (FIXTURES / "full_cycle_list.html").read_text(encoding="utf-8")
 
 
 # ── parse_table_rows ──────────────────────────────────────────────────────────
@@ -134,6 +147,7 @@ def test_build_row_basic():
     assert row["responsibilities"] == "Write C code."
     assert row["required_skills"] == "C, RTOS"
     assert row["scraped_at"] == "2026-05-01T00:00:00+00:00"
+    assert "apps_count" not in row
 
 
 def test_build_row_missing_fields_are_empty_string():
@@ -147,6 +161,79 @@ def test_build_row_raw_fields_json_is_valid():
     fields = {"Job Title": "SWE"}
     row = build_row("22222", "direct", fields, "2026-05-01T00:00:00+00:00")
     assert json.loads(row["raw_fields_json"]) == fields
+
+
+def test_build_row_merges_list_meta():
+    detail = {"Job Title": "From Detail", "Job Summary": "Long description."}
+    list_meta = {
+        "title": "From List",
+        "location": "Palo Alto",
+        "apps_count": "33",
+        "deadline": "May 26, 2026 9:00 AM",
+    }
+    row = build_row("472148", "full_cycle", detail, "2026-05-01T00:00:00+00:00", list_meta)
+    assert row["title"] == "From Detail"
+    assert row["location"] == "Palo Alto"
+    assert row["apps_count"] == "33"
+    assert row["deadline"] == "May 26, 2026 9:00 AM"
+    merged = json.loads(row["raw_fields_json"])
+    assert merged["apps_count"] == "33"
+    assert merged["Job Summary"] == "Long description."
+
+
+def test_build_row_list_fills_gaps_when_detail_empty():
+    row = build_row(
+        "472148",
+        "full_cycle",
+        {},
+        "2026-05-01T00:00:00+00:00",
+        {"title": "Data Engineering Co-op", "org": "Guidepoint Global LLC"},
+    )
+    assert row["title"] == "Data Engineering Co-op"
+    assert row["org"] == "Guidepoint Global LLC"
+
+
+# ── parse_list_rows ───────────────────────────────────────────────────────────
+
+def test_parse_list_rows_full_cycle_fixture():
+    config = BOARDS["full_cycle"]
+    rows = parse_list_rows(FULL_CYCLE_LIST_HTML, config)
+    assert "472148" in rows
+    first = rows["472148"]
+    assert first["title"] == "Forward Deployed Engineering Assistant - AI Agents"
+    assert first["org"] == "Agent Dynamics Inc."
+    assert first["division"] == "Divisional Office"
+    assert first["openings"] == "1"
+    assert first["location"] == "Palo Alto"
+    assert first["level"] == "Senior"
+    assert first["apps_count"] == "33"
+    assert first["deadline"] == "May 26, 2026 9:00 AM"
+
+
+def test_parse_list_rows_direct_columns():
+    config = BOARDS["direct"]
+    html = """
+    <tr class="table__row--body">
+      <th><input name="dataViewerSelection" value="12345"></th>
+      <td class="table__value"><span class="overflow--ellipsis">Fall 2026</span></td>
+      <td class="table__value"><span class="overflow--ellipsis">SWE Intern</span></td>
+      <td class="table__value"><span class="overflow--ellipsis">Acme Corp</span></td>
+      <td class="table__value"><span class="overflow--ellipsis">HQ</span></td>
+      <td class="table__value"><span class="overflow--ellipsis">2</span></td>
+      <td class="table__value"><span class="overflow--ellipsis">Waterloo</span></td>
+      <td class="table__value"><span class="overflow--ellipsis">Junior</span></td>
+      <td class="table__value"><span class="overflow--ellipsis">Jun 1, 2026</span></td>
+    </tr>
+    """
+    rows = parse_list_rows(html, config)
+    assert rows["12345"]["work_term"] == "Fall 2026"
+    assert rows["12345"]["title"] == "SWE Intern"
+    assert rows["12345"]["location"] == "Waterloo"
+    assert "apps_count" not in rows["12345"]
+
+
+def test_parse_list_rows_empty_html():
+    assert parse_list_rows("", BOARDS["full_cycle"]) == {}
 
 
 # ── extract_ids_from_html ─────────────────────────────────────────────────────
@@ -185,3 +272,8 @@ def test_extract_ids_multiple_jobs():
 
 def test_extract_ids_empty_html():
     assert extract_ids_from_html("") == []
+
+
+def test_extract_ids_data_viewer_checkbox():
+    html = '<input name="dataViewerSelection" value="472148" type="checkbox">'
+    assert extract_ids_from_html(html) == ["472148"]

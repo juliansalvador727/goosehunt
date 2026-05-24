@@ -20,12 +20,12 @@ JSONL_PATH = ROOT / "data" / "postings.jsonl"
 _INSERT_SQL = """
 INSERT INTO postings (
     job_id, board_type, title, org, location,
-    deadline, deadline_iso, work_term, openings,
+    deadline, deadline_iso, work_term, openings, apps_count,
     summary, responsibilities, required_skills,
     raw_fields_json, scraped_at, updated_at
 ) VALUES (
     :job_id, :board_type, :title, :org, :location,
-    :deadline, :deadline_iso, :work_term, :openings,
+    :deadline, :deadline_iso, :work_term, :openings, :apps_count,
     :summary, :responsibilities, :required_skills,
     :raw_fields_json, :scraped_at, :updated_at
 )
@@ -41,6 +41,7 @@ UPDATE postings SET
     deadline_iso     = :deadline_iso,
     work_term        = :work_term,
     openings         = :openings,
+    apps_count       = :apps_count,
     summary          = :summary,
     responsibilities = :responsibilities,
     required_skills  = :required_skills,
@@ -57,6 +58,8 @@ def init_db(conn: sqlite3.Connection) -> None:
     }
     if "status" not in columns:
         conn.execute("ALTER TABLE postings ADD COLUMN status TEXT NOT NULL DEFAULT 'new'")
+    if "apps_count" not in columns:
+        conn.execute("ALTER TABLE postings ADD COLUMN apps_count INTEGER")
     conn.commit()
 
 
@@ -73,6 +76,15 @@ def parse_deadline_iso(raw: str | None) -> str | None:
 
 def coerce_openings(raw: str | None) -> int | None:
     if raw is None:
+        return None
+    try:
+        return int(raw)
+    except (ValueError, TypeError):
+        return None
+
+
+def coerce_apps_count(raw: str | int | None) -> int | None:
+    if raw is None or raw == "":
         return None
     try:
         return int(raw)
@@ -99,6 +111,7 @@ def build_params(record: dict) -> dict:
         "deadline_iso":    parse_deadline_iso(record.get("deadline")),
         "work_term":       record.get("work_term"),
         "openings":        coerce_openings(record.get("openings")),
+        "apps_count":      coerce_apps_count(record.get("apps_count")),
         "summary":         record.get("summary"),
         "responsibilities": record.get("responsibilities"),
         "required_skills": record.get("required_skills"),

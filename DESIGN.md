@@ -91,10 +91,6 @@ await asyncio.sleep(random.uniform(0.8, 1.2))
 
 Single-threaded, no concurrent requests. ~1s random delay between postings. Manual login at startup — no credential storage in code.
 
-### Diagnostic mode
-
-`make scrape-diag` (`--diag` flag) fetches one posting, dumps the raw HTML and parsed fields to `data/diag.md`. Useful for debugging parsing regressions after WW UI updates.
-
 ---
 
 ## Database
@@ -294,11 +290,11 @@ Two-pane layout: compact sortable table on the left, sticky detail panel on the 
 
 **Header controls:**
 
-- Board dropdown: `Employer Direct` and `Full Cycle` options exist in the UI model, but only `Employer Direct` is populated by the current scraper (`board_type = "direct"`).
+- Board dropdown: `Employer Direct` (`board_type = "direct"`) and `Full Cycle` (`board_type = "full_cycle"`). Scrape with `make scrape BOARD=full_cycle` or `make run BOARD=full_cycle`.
 - Search box: instant client-side filter on title, org, location, summary, responsibilities, required skills, and job ID.
 - Role chips (SWE, AI/ML, FW, HW): toggle to show only postings with a non-zero score for that role. Multiple roles are OR'd.
-- Apply by chips (Email, Link): filter to postings that require applying by email or external URL. Stacks with role filters. Both are enabled by default, so `apply_method = "ww"` postings are hidden in the current UI.
-- Posting count: shows `filtered / total`.
+- Apply by chips (Email, Link, WW): filter by `apply_method` (`email`, `link`, or `ww`). All three are enabled by default.
+- Posting count: shows `filtered / board total` for the selected board.
 - Ctrl+K button: opens the command palette.
 - Day/Night button: toggles the CSS variable palette and persists the selected theme in `localStorage`.
 
@@ -400,7 +396,6 @@ localhost:8000          ← FastAPI + Alpine.js UI
 | --------------------------------------- | ---------------------------------------------------------------------------------- |
 | Headless mode                           | WW has bot detection; persistent profile + headed = safest                         |
 | Parallel scraping                       | Unnecessary for this corpus size; increases detection risk                         |
-| Full-Cycle scraping                     | UI has a board selector placeholder, but the scraper currently writes only Employer Direct rows |
 | Model-based classification              | Keyword scoring is transparent, instant, and tunable via YAML                      |
 | Vector database (pgvector, FAISS, etc.) | The corpus is small; numpy matmul is simpler and fast enough                       |
 | OpenAI/Anthropic embeddings             | Local model is free, offline, and quality difference is small for this corpus      |
