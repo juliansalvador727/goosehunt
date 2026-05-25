@@ -14,9 +14,12 @@ from scraper.scraper import (
     BOARDS,
     build_row,
     extract_ids_from_html,
+    extract_page_ids,
     parse_list_rows,
+    parse_list_rows_from_json,
     parse_table_rows,
     pick_field,
+    should_stop_collecting,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -234,6 +237,80 @@ def test_parse_list_rows_direct_columns():
 
 def test_parse_list_rows_empty_html():
     assert parse_list_rows("", BOARDS["full_cycle"]) == {}
+
+
+def test_parse_list_rows_from_json_cells_array():
+    config = BOARDS["full_cycle"]
+    data = {
+        "data": [
+            {
+                "id": "472148",
+                "cells": [
+                    "Forward Deployed Engineering Assistant",
+                    "Agent Dynamics Inc.",
+                    "Divisional Office",
+                    "1",
+                    "Palo Alto",
+                    "Senior",
+                    "33",
+                    "May 26, 2026 9:00 AM",
+                ],
+            }
+        ]
+    }
+    rows = parse_list_rows_from_json(data, config)
+    assert rows["472148"]["apps_count"] == "33"
+    assert rows["472148"]["openings"] == "1"
+
+
+def test_should_stop_collecting():
+    stop, reason = should_stop_collecting(
+        page_ids=["1"] * 26,
+        page_listings={"1": {}},
+        added=26,
+        items_per_page=50,
+    )
+    assert stop and "last page" in reason
+
+    stop, reason = should_stop_collecting(
+        page_ids=[f"id{i}" for i in range(50)],
+        page_listings={"id0": {}},
+        added=0,
+        items_per_page=50,
+    )
+    assert stop and "no new jobs" in reason
+
+    stop, _ = should_stop_collecting(
+        page_ids=["1"] * 50,
+        page_listings={"1": {}},
+        added=50,
+        items_per_page=50,
+    )
+    assert not stop
+
+
+def test_extract_page_ids_ignores_phantom_ck_jobid():
+    """IDs embedded in scripts must not count unless they have a table row."""
+    config = BOARDS["full_cycle"]
+    html = (
+        '<tr class="table__row--body">'
+        '<th><input name="dataViewerSelection" value="472148"></th>'
+        '<td class="table__value"><span>Job A</span></td>'
+        '<td class="table__value"><span>Org</span></td>'
+        '<td class="table__value"><span>Div</span></td>'
+        '<td class="table__value"><span>1</span></td>'
+        '<td class="table__value"><span>City</span></td>'
+        '<td class="table__value"><span>Jr</span></td>'
+        '<td class="table__value"><span>44</span></td>'
+        '<td class="table__value"><span>Jun 1</span></td>'
+        "</tr>"
+    )
+    raw = html + '<script>ck_jobid=999999</script><a href="?ck_jobid=888888">x</a>'
+    listings = parse_list_rows(html, config)
+    ids = extract_page_ids(listings, html, raw, config)
+    assert ids == ["472148"]
+    assert "999999" not in ids
+    assert "888888" not in ids
 
 
 # ── extract_ids_from_html ─────────────────────────────────────────────────────

@@ -51,7 +51,7 @@ def clean_posting_text(value: str | None) -> str | None:
 
 COLUMNS = [
     "job_id", "board_type", "title", "org", "location",
-    "deadline", "deadline_iso", "work_term", "openings",
+    "deadline", "deadline_iso", "work_term", "openings", "apps_count",
     "summary", "responsibilities", "required_skills",
     "raw_fields_json", "scraped_at", "updated_at", "status",
     "score_firmware", "score_hardware",
@@ -69,7 +69,9 @@ def ensure_postings_schema(conn: sqlite3.Connection) -> None:
         raise sqlite3.OperationalError("postings table missing")
     if "status" not in columns:
         conn.execute("ALTER TABLE postings ADD COLUMN status TEXT NOT NULL DEFAULT 'new'")
-        conn.commit()
+    if "apps_count" not in columns:
+        conn.execute("ALTER TABLE postings ADD COLUMN apps_count INTEGER")
+    conn.commit()
 
 _NUM = r"[\d,]+(?:\.\d+)?"
 _SEP = r"\s*[-–/]\s*|\s+to\s+"   # separators between range bounds
