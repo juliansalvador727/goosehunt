@@ -4,7 +4,7 @@ goosehunt scraper — WaterlooWorks job boards (Employer Direct, Full Cycle).
 
 Uses WW's in-page JS API (credit: bryanling1/waterlooworks-scraper):
   1. Extract the 'action' key embedded in the page's JS.
-  2. POST to the listing endpoint (100 per page) to collect job IDs + list metadata.
+  2. POST to the listing endpoint (page size from WW UI, usually 50) to collect job IDs + list metadata.
   3. Call window.getPostingOverview(jobId, cb) for each job → HTML string.
   4. Parse HTML in-memory; no new tabs opened.
 
@@ -38,6 +38,10 @@ ROOT = Path(__file__).parent.parent
 PROFILE_DIR = Path(__file__).parent / "profile"
 DATA_DIR = ROOT / "data"
 OUTPUT_FILE = DATA_DIR / "postings.jsonl"
+
+# WW listing grid needs time to render after pagination clicks
+PAGE_NAV_DELAY_MIN_S = 3.0
+PAGE_NAV_DELAY_MAX_S = 5.0
 
 
 @dataclass(frozen=True)
@@ -195,9 +199,10 @@ def build_row(
     }
     for col, candidates in FIELD_MAP.items():
         row[col] = pick_field(merged, candidates)
-    apps = merged.get("apps_count") or merged.get("apps") or ""
-    if apps:
-        row["apps_count"] = apps
+    if "apps_count" in merged:
+        row["apps_count"] = merged["apps_count"]
+    elif merged.get("apps"):
+        row["apps_count"] = merged["apps"]
     return row
 
 
@@ -239,6 +244,242 @@ def parse_list_rows(html: str, config: BoardConfig) -> dict[str, dict[str, str]]
         if meta:
             results[job_id] = meta
     return results
+
+
+_JSON_LIST_ALIASES: dict[str, tuple[str, ...]] = {
+    "title": ("jobTitle", "title", "job_title", "JobTitle", "Job Title"),
+    "org": ("organization", "employer", "org", "Organization"),
+    "division": ("division", "Division"),
+    "openings": ("openings", "Openings", "numberOfOpenings"),
+    "location": ("city", "location", "City", "jobCity", "Job - City"),
+    "level": ("level", "Level"),
+    "apps_count": ("apps", "Apps", "applications", "applicationCount", "numApplications"),
+    "deadline": ("deadline", "appDeadline", "applicationDeadline", "Deadline", "App Deadline"),
+    "work_term": ("workTerm", "term", "WorkTerm", "Work Term"),
+}
+
+
+def _cell_value(raw) -> str:
+    if raw is None:
+        return ""
+    if isinstance(raw, dict):
+        return str(
+            raw.get("text") or raw.get("value") or raw.get("label") or raw.get("display") or ""
+        ).strip()
+    return str(raw).strip()
+
+
+def _apply_flat_field_scan(item: dict, meta: dict[str, str]) -> None:
+    """Map loose JSON field names (e.g. Applications) onto list columns."""
+    for key, raw in item.items():
+        if key in ("id", "jobId", "postingId", "cells", "values", "columns", "fields", "row", "record"):
+            continue
+        val = _cell_value(raw)
+        if not val:
+            continue
+        kl = str(key).lower().replace("_", " ").replace("-", " ")
+        if any(x in kl for x in ("app", "application")) and "deadline" not in kl and "document" not in kl and "method" not in kl:
+            if val.replace(",", "").isdigit():
+                meta.setdefault("apps_count", val.replace(",", ""))
+        elif "title" in kl or kl == "job":
+            meta.setdefault("title", val)
+        elif "org" in kl or "employer" in kl or "company" in kl:
+            meta.setdefault("org", val)
+        elif "division" in kl:
+            meta.setdefault("division", val)
+        elif "opening" in kl or "position" in kl:
+            meta.setdefault("openings", val)
+        elif "city" in kl or kl == "location":
+            meta.setdefault("location", val)
+        elif kl == "level":
+            meta.setdefault("level", val)
+        elif "deadline" in kl:
+            meta.setdefault("deadline", val)
+        elif "term" in kl:
+            meta.setdefault("work_term", val)
+
+
+def _meta_from_json_item(item: dict, config: BoardConfig) -> dict[str, str]:
+    meta: dict[str, str] = {}
+    for arr_key in ("cells", "values", "columns", "fields", "row", "cellValues", "record"):
+        arr = item.get(arr_key)
+        if isinstance(arr, dict):
+            for col in config.list_columns:
+                for alias in _JSON_LIST_ALIASES.get(col, (col,)):
+                    if alias in arr:
+                        val = _cell_value(arr[alias])
+                        if val:
+                            meta[col] = val
+                            break
+            if meta:
+                break
+        if not isinstance(arr, list) or not arr:
+            continue
+        for i, col in enumerate(config.list_columns):
+            if i < len(arr):
+                val = _cell_value(arr[i])
+                if val:
+                    meta[col] = val
+        if meta:
+            break
+
+    for col in config.list_columns:
+        if col in meta:
+            continue
+        for alias in _JSON_LIST_ALIASES.get(col, (col,)):
+            if alias in item:
+                val = _cell_value(item[alias])
+                if val:
+                    meta[col] = val
+                    break
+
+    _apply_flat_field_scan(item, meta)
+    return meta
+
+
+def parse_list_rows_from_json(data: dict | list | None, config: BoardConfig) -> dict[str, dict[str, str]]:
+    """Parse DataViewer JSON rows when the POST response is not HTML."""
+    if data is None:
+        return {}
+    if isinstance(data, dict):
+        html = find_listing_html(data)
+        if html:
+            return parse_list_rows(html, config)
+        rows = data.get("data") or data.get("rows") or data.get("results") or []
+    elif isinstance(data, list):
+        rows = data
+    else:
+        return {}
+    if isinstance(rows, str) and "table__row--body" in rows:
+        return parse_list_rows(rows, config)
+    if not isinstance(rows, list):
+        return {}
+
+    results: dict[str, dict[str, str]] = {}
+    for item in rows:
+        if not isinstance(item, dict):
+            continue
+        jid = str(item.get("id") or item.get("jobId") or item.get("postingId") or "")
+        if not jid or len(jid) < 5:
+            continue
+        meta = _meta_from_json_item(item, config)
+        if meta:
+            results[jid] = meta
+    return results
+
+
+def merge_list_meta(*sources: dict[str, dict[str, str]] | None) -> dict[str, dict[str, str]]:
+    """Merge job_id → list_meta; later non-empty values win (for pagination fixes)."""
+    merged: dict[str, dict[str, str]] = {}
+    for source in sources:
+        if not source:
+            continue
+        for jid, meta in source.items():
+            if jid not in merged:
+                merged[jid] = {}
+            for key, value in meta.items():
+                if value:
+                    merged[jid][key] = value
+    return merged
+
+
+def find_listing_html(obj) -> str:
+    """Recursively find a listing table HTML fragment inside a JSON payload."""
+    if isinstance(obj, str):
+        return obj if "table__row--body" in obj else ""
+    if isinstance(obj, dict):
+        for key in ("html", "content", "markup", "table", "rowsHtml", "rowsHTML", "data", "body", "result"):
+            if key in obj:
+                found = find_listing_html(obj[key])
+                if found:
+                    return found
+        for value in obj.values():
+            found = find_listing_html(value)
+            if found:
+                return found
+    if isinstance(obj, list):
+        for value in obj:
+            found = find_listing_html(value)
+            if found:
+                return found
+    return ""
+
+
+def listing_html_from_payload(text: str, data: dict | list | None) -> str:
+    if data is not None:
+        found = find_listing_html(data)
+        if found:
+            return found
+    if text and "table__row--body" in text:
+        return text
+    return ""
+
+
+def should_stop_collecting(
+    *,
+    page_ids: list[str],
+    page_listings: dict,
+    added: int,
+    items_per_page: int,
+) -> tuple[bool, str]:
+    """Decide whether listing pagination is complete."""
+    if not page_ids and not page_listings:
+        return True, "empty page"
+    if page_ids and len(page_ids) < items_per_page:
+        return True, f"last page ({len(page_ids)} rows)"
+    if added == 0:
+        return True, "no new jobs"
+    return False, ""
+
+
+def extract_page_ids(
+    page_listings: dict[str, dict[str, str]],
+    html_chunk: str,
+    raw_text: str,
+    config: BoardConfig,
+) -> list[str]:
+    """Job IDs from parsed listing rows only (avoids phantom ck_jobid in scripts)."""
+    ids = set(page_listings.keys())
+    if html_chunk:
+        ids.update(parse_list_rows(html_chunk, config))
+    if ids:
+        return sorted(ids)
+    return extract_ids_from_html(raw_text or "")
+
+
+def parse_listing_page_result(
+    raw_text: str,
+    data: dict | list | None,
+    dom: dict | None,
+    config: BoardConfig,
+) -> tuple[dict[str, dict[str, str]], list[str]]:
+    """Merge POST JSON/HTML and DOM scrape into page listings + job IDs."""
+    html_chunk = listing_html_from_payload(raw_text, data)
+    page_listings = merge_list_meta(
+        parse_list_rows(html_chunk, config) if html_chunk else {},
+        parse_list_rows_from_json(data, config),
+        dom or {},
+    )
+    page_ids = extract_page_ids(page_listings, html_chunk, raw_text, config)
+    return page_listings, page_ids
+
+
+def merge_page_into(
+    all_listings: dict[str, dict[str, str]],
+    page_ids: list[str],
+    page_listings: dict[str, dict[str, str]],
+) -> int:
+    """Add one listing page; return count of new job IDs."""
+    prior = len(all_listings)
+    for jid in page_ids:
+        if jid not in all_listings:
+            all_listings[jid] = dict(page_listings.get(jid, {}))
+    for jid, meta in page_listings.items():
+        entry = all_listings.setdefault(jid, {})
+        for key, value in meta.items():
+            if value:
+                entry[key] = value
+    return len(all_listings) - prior
 
 
 def extract_ids_from_html(html: str) -> list[str]:
@@ -371,6 +612,31 @@ async def wait_for_login(ctx, config: BoardConfig):
     return page
 
 
+async def get_items_per_page(page) -> int:
+    """Read WW DataViewer page size from the page (falls back to 50)."""
+    value = await evaluate_retry(page, r"""
+        () => {
+            for (const script of document.querySelectorAll('script')) {
+                const t = script.textContent || '';
+                let m = t.match(/itemsPerPage\s*:\s*(\d+)/);
+                if (m) return parseInt(m[1], 10);
+                m = t.match(/pageSize\s*:\s*(\d+)/);
+                if (m) return parseInt(m[1], 10);
+            }
+            const sel = document.querySelector(
+                'select[name*="itemsPerPage"], select[aria-label*="per page" i], select[aria-label*="items per" i]'
+            );
+            if (sel && sel.value) return parseInt(sel.value, 10);
+            return 50;
+        }
+    """)
+    try:
+        size = int(value)
+    except (TypeError, ValueError):
+        size = 50
+    return max(10, min(size, 100))
+
+
 async def get_action_key(page) -> str:
     """Extract the DataViewer action key from the page's embedded script tags."""
     result = await evaluate_retry(page, r"""
@@ -386,18 +652,60 @@ async def get_action_key(page) -> str:
     return result or ""
 
 
-async def fetch_listing_page(page, action: str, page_num: int) -> dict:
-    """POST to the WW DataViewer endpoint; return IDs and raw HTML when available."""
+async def fetch_listing_page(
+    page,
+    action: str,
+    page_num: int,
+    config: BoardConfig,
+    items_per_page: int,
+    page_nav_delay_ms: int,
+) -> dict:
+    """POST to the WW DataViewer endpoint; return IDs and list metadata for one page."""
+    columns = list(config.list_columns)
     result = await evaluate_retry(page, """
-        async ({action, pageNum}) => {
+        async ({action, pageNum, columns, itemsPerPage, pageNavDelayMs}) => {
+            const scrapeDom = () => {
+                const dom = {};
+                document.querySelectorAll('tr.table__row--body').forEach((tr) => {
+                    const cb = tr.querySelector('input[name="dataViewerSelection"]');
+                    if (!cb?.value) return;
+                    const cells = [...tr.querySelectorAll('td.table__value')].map((td) =>
+                        (td.innerText || td.textContent || '').trim()
+                    );
+                    const meta = {};
+                    columns.forEach((col, i) => {
+                        if (cells[i]) meta[col] = cells[i];
+                    });
+                    if (Object.keys(meta).length) dom[cb.value] = meta;
+                });
+                return dom;
+            };
+
+            const goToPage = async (n) => {
+                const targets = [...document.querySelectorAll(
+                    'button, a, [role="button"], .pagination button, .pagination a'
+                )];
+                const btn = targets.find((el) => {
+                    const text = (el.textContent || '').trim();
+                    const aria = el.getAttribute('aria-label') || '';
+                    return text === String(n)
+                        || aria === `Page ${n}`
+                        || aria === `Go to page ${n}`;
+                });
+                if (btn) {
+                    btn.click();
+                    await new Promise((r) => setTimeout(r, pageNavDelayMs));
+                }
+            };
+
             const form = new FormData();
-            form.append('action',       action);
-            form.append('page',         String(pageNum));
-            form.append('itemsPerPage', '100');
-            form.append('sort',         '');
-            form.append('filters',      '');
-            form.append('columns',      '');
-            form.append('keyword',      '');
+            form.append('action', action);
+            form.append('page', String(pageNum));
+            form.append('itemsPerPage', String(itemsPerPage));
+            form.append('sort', '');
+            form.append('filters', '');
+            form.append('columns', '');
+            form.append('keyword', '');
             form.append('isDataViewer', 'true');
             const resp = await fetch(window.location.href, {
                 method: 'POST',
@@ -405,34 +713,26 @@ async def fetch_listing_page(page, action: str, page_num: int) -> dict:
                 credentials: 'same-origin',
             });
             const text = await resp.text();
-            try {
-                return {json: JSON.parse(text), text: text};
-            } catch (e) {
-                return {json: null, text: text};
-            }
+            let json = null;
+            try { json = JSON.parse(text); } catch (e) {}
+
+            await goToPage(pageNum);
+            return { json, text, dom: scrapeDom() };
         }
-    """, {"action": action, "pageNum": page_num})
+    """, {
+        "action": action,
+        "pageNum": page_num,
+        "columns": columns,
+        "itemsPerPage": items_per_page,
+        "pageNavDelayMs": page_nav_delay_ms,
+    })
 
     raw_text = result.get("text") or ""
-    ids: list[str] = []
-
-    if result["json"] is not None:
-        data = result["json"]
-        rows = data.get("data") or data.get("rows") or data.get("resultIds") or []
-        if isinstance(rows, list):
-            for item in rows:
-                if isinstance(item, dict):
-                    jid = str(item.get("id") or item.get("jobId") or item.get("postingId") or "")
-                    if jid and len(jid) >= 5:
-                        ids.append(jid)
-                elif isinstance(item, (str, int)) and len(str(item)) >= 5:
-                    ids.append(str(item))
-        if not ids:
-            ids = extract_ids_from_html(raw_text or str(data))
-    else:
-        ids = extract_ids_from_html(raw_text)
-
-    return {"ids": ids, "html": raw_text or None}
+    data = result.get("json")
+    page_listings, page_ids = parse_listing_page_result(
+        raw_text, data, result.get("dom"), config,
+    )
+    return {"ids": page_ids, "listings": page_listings}
 
 
 async def collect_all_listings(page, config: BoardConfig) -> dict[str, dict[str, str]]:
@@ -443,37 +743,50 @@ async def collect_all_listings(page, config: BoardConfig) -> dict[str, dict[str,
         return {}
     print(f"[COLLECT] action key found ({len(action)} chars)")
 
+    items_per_page = await get_items_per_page(page)
+    print(f"[COLLECT] items per page: {items_per_page}")
+
     all_listings: dict[str, dict[str, str]] = {}
     page_num = 1
 
     while True:
-        print(f"[COLLECT] page {page_num}...")
-        page_result = await fetch_listing_page(page, action, page_num)
-        page_listings = (
-            parse_list_rows(page_result["html"], config)
-            if page_result["html"]
-            else {}
+        page_nav_s = random.uniform(PAGE_NAV_DELAY_MIN_S, PAGE_NAV_DELAY_MAX_S)
+        page_nav_ms = int(page_nav_s * 1000)
+        print(f"[COLLECT] page {page_num} (wait {page_nav_s:.1f}s after click)...")
+        page_result = await fetch_listing_page(
+            page, action, page_num, config, items_per_page, page_nav_ms,
         )
-        prior_count = len(all_listings)
+        page_listings = page_result.get("listings") or {}
+        page_ids = page_result["ids"]
+        added = merge_page_into(all_listings, page_ids, page_listings)
 
-        for jid in page_result["ids"]:
-            if jid not in all_listings:
-                all_listings[jid] = page_listings.get(jid, {})
+        if config.board_type == "full_cycle" and page_ids:
+            matched = sum(
+                1 for jid in page_ids if page_listings.get(jid, {}).get("apps_count")
+            )
+            print(
+                f"[COLLECT]   {len(page_ids)} rows, apps_count {matched}/{len(page_ids)}"
+            )
 
-        for jid, meta in page_listings.items():
-            if jid not in all_listings:
-                all_listings[jid] = dict(meta)
-            else:
-                all_listings[jid].update(meta)
-
-        added = len(all_listings) - prior_count
-        if added == 0:
-            print(f"[COLLECT] no new listings on page {page_num} — done.")
+        stop, reason = should_stop_collecting(
+            page_ids=page_ids,
+            page_listings=page_listings,
+            added=added,
+            items_per_page=items_per_page,
+        )
+        if stop:
+            print(f"[COLLECT] {reason} — done ({len(all_listings)} jobs).")
             break
 
-        print(f"[COLLECT] +{added} (total: {len(all_listings)})")
+        print(f"[COLLECT] +{added} (total {len(all_listings)})")
         page_num += 1
-        await asyncio.sleep(random.uniform(0.5, 1.0))
+
+    with_apps = sum(1 for m in all_listings.values() if m.get("apps_count"))
+    if config.board_type == "full_cycle" and all_listings:
+        print(
+            f"[COLLECT] full_cycle apps_count: {with_apps}/{len(all_listings)} "
+            f"({100 * with_apps // len(all_listings)}%)"
+        )
 
     return all_listings
 

@@ -227,6 +227,20 @@
         pointer-events: none;
         font-style: normal;
       }
+
+      .col-icon {
+        display: inline-block;
+        width: 13px;
+        height: 13px;
+        vertical-align: -2px;
+        margin-right: 2px;
+        color: var(--tx3);
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
       #search {
         width: 210px;
         padding: 5px 10px 5px 27px;
@@ -1149,12 +1163,30 @@
                   style="min-width: 28px; text-align: center"
                   @click="srt('openings')"
                   :class="{sk:sortCol==='openings'}"
+                  title="Openings"
                 >
                   #
                   <i
                     class="sa"
                     :class="{on:sortCol==='openings'}"
                     x-text="arr('openings')"
+                  ></i>
+                </th>
+                <th
+                  x-show="board === 'full_cycle'"
+                  style="min-width: 36px; text-align: center"
+                  @click="srt('apps_count')"
+                  :class="{sk:sortCol==='apps_count'}"
+                  title="Applicants — click to sort"
+                >
+                  <svg class="col-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle>
+                  </svg>
+                  <i
+                    class="sa"
+                    :class="{on:sortCol==='apps_count'}"
+                    x-text="arr('apps_count')"
                   ></i>
                 </th>
                 <th
@@ -1206,6 +1238,12 @@
                     :title="p.comp_hourly != null ? 'est. $'+p.comp_hourly.toFixed(2)+'/hr' : 'not listed'"
                   ></td>
                   <td class="nc" x-text="p.openings ?? '—'"></td>
+                  <td
+                    x-show="board === 'full_cycle'"
+                    class="nc"
+                    :title="p.apps_count != null ? p.apps_count + ' applicants' : ''"
+                    x-text="p.apps_count ?? '—'"
+                  ></td>
                   <td
                     class="st"
                     :class="'st-' + (p.status || 'new')"
@@ -1721,6 +1759,12 @@
                 cat: "sort",
                 label: "Sort by Pay",
                 fn: s("comp_score"),
+              },
+              {
+                id: "sap",
+                cat: "sort",
+                label: "Sort by applicants",
+                fn: s("apps_count"),
               },
               {
                 id: "sdl",
