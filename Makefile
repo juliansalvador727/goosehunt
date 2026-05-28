@@ -2,15 +2,17 @@
 
 ifeq ($(OS),Windows_NT)
 PYTHON := .venv/Scripts/python.exe
+PLAYWRIGHT := .venv/Scripts/playwright.exe
 else
 PYTHON := .venv/bin/python
+PLAYWRIGHT := .venv/bin/playwright
 endif
 
 # ── setup ────────────────────────────────────────────────────────
 install:
 	uv venv
 	uv pip install -r requirements.txt
-	.venv\Scripts\playwright.exe install chromium
+	$(PLAYWRIGHT) install chromium
 
 # ── preflight ────────────────────────────────────────────────────
 check-resume:
