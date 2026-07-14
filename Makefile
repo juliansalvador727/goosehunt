@@ -25,7 +25,7 @@ check-inputs:
 BOARD ?= direct
 
 scrape:
-	$(PYTHON) -m scraper.scraper --board $(BOARD)
+	$(PYTHON) -m scraper.scraper --board $(BOARD) $(ARGS)
 
 # ── pipeline (ingest → embed → score) ───────────────────────────
 pipeline: check-inputs

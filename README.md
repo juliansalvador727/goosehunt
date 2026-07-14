@@ -13,7 +13,7 @@ A personal tool for UWaterloo co-op students that turns WaterlooWorks job boards
 ## What it does
 
 1. **Scrapes** your currently visible WaterlooWorks results using Playwright (Employer Direct or Full Cycle). You log in manually, set your filters and work term, then press Enter — the scraper does the rest.
-2. **Stores** every posting in a local SQLite database. Resumable: a crashed scrape picks up where it left off.
+2. **Stores** every posting in a local SQLite database. Each run re-scrapes everything currently listed so deadlines stay current, and prunes postings that have dropped off the board (`--resume` picks a crashed scrape back up instead).
 3. **Classifies** each posting against four role types (SWE, AI/ML, firmware, hardware) using tunable keyword lists in `config/roles.yaml`.
 4. **Scores** each posting against your resume PDF using cosine similarity on sentence embeddings.
 5. **Serves** a local web UI — one page, all postings loaded, client-side sort/filter, keyboard navigation, no build step.
@@ -175,15 +175,15 @@ This re-scores all postings in under a second. No re-scraping or re-embedding ne
 
 ## Refreshing postings
 
-`make scrape` is resumable and skips job IDs already in `data/postings.jsonl`. To force a full refresh after changing the scraper or parser:
+`make scrape` **re-scrapes every posting currently listed on the board by default**, so deadlines, apps counts, and details stay current. Each run also writes a listing manifest (`data/listing_<board>.json`) of every job ID it saw; `make ingest` uses it to purge postings that have dropped off the board — so the DB mirrors what WaterlooWorks shows rather than accumulating stale, expired jobs.
+
+To resume a crashed run instead of re-scraping from scratch, skipping IDs already in `data/postings.jsonl`:
 
 ```bash
-mv data/postings.jsonl data/postings.old.jsonl
-make scrape
-make ingest
-.venv/bin/python embed/embed_postings.py --force
-make score
+make scrape ARGS=--resume    # or: .venv/bin/python -m scraper.scraper --board direct --resume
 ```
+
+If a run leaves failed detail fetches, their IDs are written to `data/failed_<board>.json` — just re-run `make scrape` to retry them.
 
 Local job statuses (`new`/`maybe`/`applied`/`ignored`) are stored in `data/postings.db` and are preserved across re-scrapes.
 

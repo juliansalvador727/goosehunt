@@ -12,6 +12,8 @@ import pytest
 
 from scraper.scraper import (
     BOARDS,
+    MAX_LISTING_PAGES,
+    MAX_NO_NEW_PAGES,
     build_row,
     extract_ids_from_html,
     extract_page_ids,
@@ -264,27 +266,57 @@ def test_parse_list_rows_from_json_cells_array():
 
 
 def test_should_stop_collecting():
+    # An empty page always ends the crawl.
     stop, reason = should_stop_collecting(
+        page_ids=[],
+        page_listings={},
+        consecutive_no_new=0,
+        page_num=3,
+    )
+    assert stop and "empty page" in reason
+
+    # A short page mid-run is NOT the end on its own — it still added new IDs.
+    stop, _ = should_stop_collecting(
         page_ids=["1"] * 26,
         page_listings={"1": {}},
-        added=26,
-        items_per_page=50,
+        consecutive_no_new=0,
+        page_num=3,
     )
-    assert stop and "last page" in reason
+    assert not stop
 
+    # Enough consecutive no-new pages ends the crawl.
     stop, reason = should_stop_collecting(
         page_ids=[f"id{i}" for i in range(50)],
         page_listings={"id0": {}},
-        added=0,
-        items_per_page=50,
+        consecutive_no_new=MAX_NO_NEW_PAGES,
+        page_num=5,
     )
     assert stop and "no new jobs" in reason
 
+    # A single no-new page is tolerated (below the threshold).
+    stop, _ = should_stop_collecting(
+        page_ids=[f"id{i}" for i in range(50)],
+        page_listings={"id0": {}},
+        consecutive_no_new=1,
+        page_num=5,
+    )
+    assert not stop
+
+    # Hard page cap is a safety net against a broken pager.
+    stop, reason = should_stop_collecting(
+        page_ids=["1"] * 50,
+        page_listings={"1": {}},
+        consecutive_no_new=0,
+        page_num=MAX_LISTING_PAGES,
+    )
+    assert stop and "max page cap" in reason
+
+    # A normal full page keeps going.
     stop, _ = should_stop_collecting(
         page_ids=["1"] * 50,
         page_listings={"1": {}},
-        added=50,
-        items_per_page=50,
+        consecutive_no_new=0,
+        page_num=2,
     )
     assert not stop
 

@@ -43,6 +43,14 @@ OUTPUT_FILE = DATA_DIR / "postings.jsonl"
 PAGE_NAV_DELAY_MIN_S = 3.0
 PAGE_NAV_DELAY_MAX_S = 5.0
 
+# Pagination safety limits (see should_stop_collecting)
+MAX_NO_NEW_PAGES = 2      # stop after this many consecutive pages with no new IDs
+MAX_LISTING_PAGES = 200   # hard cap so a broken pager can't loop forever
+
+# Detail-fetch retry policy
+DETAIL_FETCH_RETRIES = 3
+DETAIL_FETCH_RETRY_DELAY_S = 2.0
+
 
 @dataclass(frozen=True)
 class BoardConfig:
@@ -101,6 +109,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="direct",
         help="Which WW board to scrape (default: direct)",
     )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help=(
+            "Resume a crashed run: skip jobs already in postings.jsonl instead of "
+            "re-fetching every listed posting. Default is a full refresh so deadlines "
+            "and apps counts stay current."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -121,6 +138,25 @@ def load_done() -> set[str]:
 def append_output(row: dict) -> None:
     with OUTPUT_FILE.open("a") as f:
         f.write(json.dumps(row) + "\n")
+
+
+def listing_manifest_path(board_type: str) -> Path:
+    return DATA_DIR / f"listing_{board_type}.json"
+
+
+def write_listing_manifest(board_type: str, job_ids: list[str], now: str) -> None:
+    """Record the full set of job IDs visible in this scrape's listing.
+
+    Ingest uses this to purge postings that are no longer listed, instead of
+    guessing liveness from a possibly-stale deadline.
+    """
+    path = listing_manifest_path(board_type)
+    payload = {
+        "board_type": board_type,
+        "scraped_at": now,
+        "job_ids": sorted(job_ids),
+    }
+    path.write_text(json.dumps(payload, indent=2))
 
 
 # ── Pure parsing helpers (tested without browser) ─────────────────────────────
@@ -419,16 +455,25 @@ def should_stop_collecting(
     *,
     page_ids: list[str],
     page_listings: dict,
-    added: int,
-    items_per_page: int,
+    consecutive_no_new: int,
+    page_num: int,
+    max_no_new: int = MAX_NO_NEW_PAGES,
+    max_pages: int = MAX_LISTING_PAGES,
 ) -> tuple[bool, str]:
-    """Decide whether listing pagination is complete."""
+    """Decide whether listing pagination is complete.
+
+    A short page (fewer rows than a full page) is *not* treated as the end on its
+    own — WW occasionally returns a partial page mid-run, and stopping there was
+    dropping jobs. Instead we keep going until a page is genuinely empty, or until
+    several consecutive pages add no new IDs (the real end, or a pager that keeps
+    returning the same rows), or until a hard page cap as a safety net.
+    """
     if not page_ids and not page_listings:
         return True, "empty page"
-    if page_ids and len(page_ids) < items_per_page:
-        return True, f"last page ({len(page_ids)} rows)"
-    if added == 0:
-        return True, "no new jobs"
+    if consecutive_no_new >= max_no_new:
+        return True, f"no new jobs for {consecutive_no_new} consecutive page(s)"
+    if page_num >= max_pages:
+        return True, f"reached max page cap ({max_pages})"
     return False, ""
 
 
@@ -748,6 +793,7 @@ async def collect_all_listings(page, config: BoardConfig) -> dict[str, dict[str,
 
     all_listings: dict[str, dict[str, str]] = {}
     page_num = 1
+    consecutive_no_new = 0
 
     while True:
         page_nav_s = random.uniform(PAGE_NAV_DELAY_MIN_S, PAGE_NAV_DELAY_MAX_S)
@@ -759,26 +805,32 @@ async def collect_all_listings(page, config: BoardConfig) -> dict[str, dict[str,
         page_listings = page_result.get("listings") or {}
         page_ids = page_result["ids"]
         added = merge_page_into(all_listings, page_ids, page_listings)
+        consecutive_no_new = consecutive_no_new + 1 if added == 0 else 0
 
+        short = bool(page_ids) and len(page_ids) < items_per_page
+        short_note = " (short page)" if short else ""
+        print(
+            f"[COLLECT]   page {page_num}: {len(page_ids)} rows, +{added} new "
+            f"(total {len(all_listings)}){short_note}"
+        )
         if config.board_type == "full_cycle" and page_ids:
             matched = sum(
                 1 for jid in page_ids if page_listings.get(jid, {}).get("apps_count")
             )
             print(
-                f"[COLLECT]   {len(page_ids)} rows, apps_count {matched}/{len(page_ids)}"
+                f"[COLLECT]   apps_count {matched}/{len(page_ids)}"
             )
 
         stop, reason = should_stop_collecting(
             page_ids=page_ids,
             page_listings=page_listings,
-            added=added,
-            items_per_page=items_per_page,
+            consecutive_no_new=consecutive_no_new,
+            page_num=page_num,
         )
         if stop:
             print(f"[COLLECT] {reason} — done ({len(all_listings)} jobs).")
             break
 
-        print(f"[COLLECT] +{added} (total {len(all_listings)})")
         page_num += 1
 
     with_apps = sum(1 for m in all_listings.values() if m.get("apps_count"))
@@ -809,6 +861,27 @@ async def get_posting_overview(page, job_id: str) -> str | None:
         return None
 
 
+async def fetch_overview_with_retry(
+    page,
+    job_id: str,
+    *,
+    retries: int = DETAIL_FETCH_RETRIES,
+    delay: float = DETAIL_FETCH_RETRY_DELAY_S,
+) -> str | None:
+    """get_posting_overview with retries — WW times out on individual postings."""
+    for attempt in range(1, retries + 1):
+        html = await get_posting_overview(page, job_id)
+        if html:
+            return html
+        if attempt < retries:
+            print(
+                f"[SCRAPE]   no HTML (attempt {attempt}/{retries}) — "
+                f"retrying in {delay:.1f}s..."
+            )
+            await asyncio.sleep(delay)
+    return None
+
+
 async def parse_overview_html(page, html: str) -> dict[str, str]:
     """Inject overview HTML into a temp div, extract key-value pairs."""
     return await evaluate_retry(page, """
@@ -833,24 +906,44 @@ async def parse_overview_html(page, html: str) -> dict[str, str]:
 
 # ── Scrape loop ───────────────────────────────────────────────────────────────
 
-async def run_scrape(ctx, page, config: BoardConfig) -> None:
+async def run_scrape(ctx, page, config: BoardConfig, *, resume: bool = False) -> None:
     listings = await collect_all_listings(page, config)
     if not listings:
         print("[SCRAPE] No job listings found. Confirm filters are set and listings are visible, then re-run.")
         return
 
     all_ids = list(listings.keys())
+
+    # Record the full listing so ingest can purge postings no longer on the board,
+    # regardless of whether every detail fetch below succeeds.
+    manifest_now = datetime.now(timezone.utc).isoformat()
+    write_listing_manifest(config.board_type, all_ids, manifest_now)
+
     done = load_done()
-    todo = [jid for jid in all_ids if jid not in done]
-    print(f"\n[SCRAPE] {len(todo)} to scrape, {len(done)} already done.\n")
+    if resume:
+        todo = [jid for jid in all_ids if jid not in done]
+        skipped_done = len(all_ids) - len(todo)
+        print(
+            f"\n[SCRAPE] Listing collected {len(all_ids)} jobs. "
+            f"Resume mode: {len(todo)} to scrape, {skipped_done} already in postings.jsonl.\n"
+        )
+    else:
+        todo = list(all_ids)
+        print(
+            f"\n[SCRAPE] Listing collected {len(all_ids)} jobs. "
+            f"Full refresh: re-scraping all {len(todo)} "
+            f"({len(done)} already in postings.jsonl will be refreshed).\n"
+        )
 
     scraped = 0
+    failed: list[str] = []
     for i, job_id in enumerate(todo, 1):
         print(f"[SCRAPE] ({i}/{len(todo)}) job {job_id}")
 
-        html = await get_posting_overview(page, job_id)
+        html = await fetch_overview_with_retry(page, job_id)
         if not html:
-            print("[SCRAPE]   skipped (no HTML returned).")
+            print("[SCRAPE]   FAILED (no HTML after retries).")
+            failed.append(job_id)
         else:
             fields = await parse_overview_html(page, html)
             list_meta = listings.get(job_id, {})
@@ -869,7 +962,24 @@ async def run_scrape(ctx, page, config: BoardConfig) -> None:
             print(f"[SCRAPE]   sleeping {delay:.1f}s...")
             await asyncio.sleep(delay)
 
-    print(f"\n[SCRAPE] Done. {scraped} scraped this run. Total: {len(load_done())}.")
+    # Diagnostics: make loss between "listed" and "scraped" visible.
+    if failed:
+        fail_path = DATA_DIR / f"failed_{config.board_type}.json"
+        fail_path.write_text(json.dumps({
+            "board_type": config.board_type,
+            "scraped_at": manifest_now,
+            "job_ids": failed,
+        }, indent=2))
+        print(
+            f"\n[SCRAPE] {len(failed)} posting(s) failed detail fetch — "
+            f"IDs written to {fail_path.name} (re-run to retry)."
+        )
+
+    print(
+        f"\n[SCRAPE] Done. Listed {len(all_ids)}, attempted {len(todo)}, "
+        f"scraped {scraped}, failed {len(failed)}. "
+        f"postings.jsonl now holds {len(load_done())} unique jobs."
+    )
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -895,7 +1005,7 @@ async def main() -> None:
         jobs_page = await wait_for_login(ctx, config)
         await wait_for_listing_ready(jobs_page)
 
-        await run_scrape(ctx, jobs_page, config)
+        await run_scrape(ctx, jobs_page, config, resume=args.resume)
 
         await ctx.close()
 

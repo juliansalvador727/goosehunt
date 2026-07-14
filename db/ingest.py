@@ -7,17 +7,16 @@ import sqlite3
 from pathlib import Path
 from typing import Iterator
 
-from datetime import date
-
 from dateutil import parser as dateutil_parser
 
 logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.WARNING)
 log = logging.getLogger(__name__)
 
 ROOT = Path(__file__).parent.parent
-DB_PATH = ROOT / "data" / "postings.db"
+DATA_DIR = ROOT / "data"
+DB_PATH = DATA_DIR / "postings.db"
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
-JSONL_PATH = ROOT / "data" / "postings.jsonl"
+JSONL_PATH = DATA_DIR / "postings.jsonl"
 
 _INSERT_SQL = """
 INSERT INTO postings (
@@ -123,15 +122,50 @@ def build_params(record: dict) -> dict:
     }
 
 
-def purge_expired(conn: sqlite3.Connection) -> int:
-    """Delete postings whose deadline has passed. Returns count removed."""
-    today = date.today().isoformat()
-    cur = conn.execute(
-        "DELETE FROM postings WHERE deadline_iso IS NOT NULL AND deadline_iso < ?",
-        (today,),
-    )
+def load_listing_manifests() -> dict[str, set[str]]:
+    """Read scraper listing manifests → {board_type: set of currently-listed job_ids}.
+
+    Each `data/listing_<board>.json` is written by the scraper and reflects the
+    full set of job IDs visible on that board during the latest scrape.
+    """
+    manifests: dict[str, set[str]] = {}
+    for path in sorted(DATA_DIR.glob("listing_*.json")):
+        try:
+            payload = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            log.warning("Could not read listing manifest %s: %s", path.name, exc)
+            continue
+        board = payload.get("board_type")
+        ids = payload.get("job_ids") or []
+        if board and ids:
+            manifests[board] = {str(j) for j in ids}
+    return manifests
+
+
+def purge_unlisted(conn: sqlite3.Connection) -> int:
+    """Delete postings no longer present in their board's latest listing.
+
+    Replaces the old deadline-based purge: liveness now comes from what the
+    scraper actually saw on the board, not from a possibly-stale stored deadline.
+    Boards without a manifest are left untouched (nothing to compare against).
+    """
+    manifests = load_listing_manifests()
+    if not manifests:
+        return 0
+
+    removed = 0
+    for board, live_ids in manifests.items():
+        rows = conn.execute(
+            "SELECT job_id FROM postings WHERE board_type = ?", (board,)
+        ).fetchall()
+        stale = [r[0] for r in rows if r[0] not in live_ids]
+        if stale:
+            conn.executemany(
+                "DELETE FROM postings WHERE job_id = ?", [(j,) for j in stale]
+            )
+            removed += len(stale)
     conn.commit()
-    return cur.rowcount
+    return removed
 
 
 def upsert_posting(conn: sqlite3.Connection, params: dict) -> str:
@@ -165,7 +199,7 @@ def main() -> None:
             result = upsert_posting(conn, params)
             counts[result] += 1
         conn.commit()
-        removed = purge_expired(conn)
+        removed = purge_unlisted(conn)
 
     print(f"Ingested {JSONL_PATH} → {DB_PATH}")
     print(
@@ -174,7 +208,7 @@ def main() -> None:
         f"Skipped: {counts['skipped']}"
     )
     if removed:
-        print(f"Removed {removed} expired posting(s).")
+        print(f"Removed {removed} posting(s) no longer listed on their board.")
 
 
 if __name__ == "__main__":
