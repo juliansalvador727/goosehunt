@@ -38,6 +38,8 @@
         --tx3: #4e4e62;
         --ac: #3b82f6;
         --ac-bg: rgba(59, 130, 246, 0.1);
+        --red: #f87171;
+        --red-bg: rgba(248, 113, 113, 0.12);
         --green: hsl(142, 65%, 58%);
         --amber: #f59e0b;
         --mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
@@ -55,6 +57,8 @@
         --tx3: #8a96aa;
         --ac: #3b82f6;
         --ac-bg: rgba(59, 130, 246, 0.1);
+        --red: #dc2626;
+        --red-bg: rgba(220, 38, 38, 0.09);
         --green: hsl(144, 58%, 27%);
         --amber: #b45309;
       }
@@ -410,6 +414,31 @@
       .theme-btn {
         min-width: 46px;
         justify-content: center;
+      }
+      .del-btn {
+        color: var(--red);
+        border-color: var(--red);
+        padding: 3px 6px;
+      }
+      .del-btn:hover {
+        color: var(--red);
+        border-color: var(--red);
+        background: var(--red-bg);
+      }
+      .del-btn svg {
+        display: block;
+      }
+      .del-spin {
+        animation: del-pulse 0.8s ease-in-out infinite;
+      }
+      @keyframes del-pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.35;
+        }
       }
 
       /* ── workspace ────────────────────────────────────────────── */
@@ -1037,6 +1066,31 @@
         <label class="chip" :class="{on: fWw}">
           <input type="checkbox" x-model="fWw" @change="applyFilters()" />WW
         </label>
+        <button
+          class="pal-btn del-btn"
+          @click="deleteExpired()"
+          :disabled="deletingExpired"
+          :title="deletingExpired ? 'Deleting…' : 'Delete all postings whose deadline has passed'"
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            :class="{ 'del-spin': deletingExpired }"
+          >
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path
+              d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
+            ></path>
+            <line x1="10" y1="11" x2="10" y2="17"></line>
+            <line x1="14" y1="11" x2="14" y2="17"></line>
+          </svg>
+        </button>
       </div>
 
       <div class="topbar-r">
@@ -1489,6 +1543,7 @@
           fEmail: true,
           fLink: true,
           fWw: true,
+          deletingExpired: false,
           cpId_: null,
           cpEmail_: false,
           // palette
@@ -1574,6 +1629,48 @@
           setBoard(id) {
             this.board = id;
             this.applyFilters();
+          },
+
+          async deleteExpired() {
+            if (this.deletingExpired) return;
+            const now = Date.now();
+            const expired = this.postings.filter(
+              (p) => p.deadline_iso && new Date(p.deadline_iso) < now,
+            ).length;
+            if (!expired) {
+              this.apiError = "No expired jobs to delete.";
+              return;
+            }
+            if (
+              !confirm(
+                `Delete ${expired} expired job${expired === 1 ? "" : "s"}? This cannot be undone.`,
+              )
+            )
+              return;
+            this.deletingExpired = true;
+            try {
+              const r = await fetch("/api/postings/expired", { method: "DELETE" });
+              if (!r.ok) {
+                let detail = "Could not delete expired jobs.";
+                try {
+                  detail = (await r.json()).detail || detail;
+                } catch (_) {}
+                throw new Error(detail);
+              }
+              // Drop the deleted rows locally so the list updates without a reload.
+              const cutoff = Date.now();
+              this.postings = this.postings.filter(
+                (p) => !(p.deadline_iso && new Date(p.deadline_iso) < cutoff),
+              );
+              if (this.selId && !this.postings.some((p) => p.job_id === this.selId))
+                this.selId = null;
+              this.applyFilters();
+              this._mkPal();
+            } catch (err) {
+              this.apiError = err?.message || "Could not delete expired jobs.";
+            } finally {
+              this.deletingExpired = false;
+            }
           },
 
           applyFilters() {

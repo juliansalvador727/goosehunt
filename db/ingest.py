@@ -7,6 +7,8 @@ import sqlite3
 from pathlib import Path
 from typing import Iterator
 
+from datetime import date
+
 from dateutil import parser as dateutil_parser
 
 logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.WARNING)
@@ -121,6 +123,17 @@ def build_params(record: dict) -> dict:
     }
 
 
+def purge_expired(conn: sqlite3.Connection) -> int:
+    """Delete postings whose deadline has passed. Returns count removed."""
+    today = date.today().isoformat()
+    cur = conn.execute(
+        "DELETE FROM postings WHERE deadline_iso IS NOT NULL AND deadline_iso < ?",
+        (today,),
+    )
+    conn.commit()
+    return cur.rowcount
+
+
 def upsert_posting(conn: sqlite3.Connection, params: dict) -> str:
     row = conn.execute(
         "SELECT raw_fields_json FROM postings WHERE job_id = ?",
@@ -152,6 +165,7 @@ def main() -> None:
             result = upsert_posting(conn, params)
             counts[result] += 1
         conn.commit()
+        removed = purge_expired(conn)
 
     print(f"Ingested {JSONL_PATH} → {DB_PATH}")
     print(
@@ -159,6 +173,8 @@ def main() -> None:
         f"Updated: {counts['updated']}  "
         f"Skipped: {counts['skipped']}"
     )
+    if removed:
+        print(f"Removed {removed} expired posting(s).")
 
 
 if __name__ == "__main__":

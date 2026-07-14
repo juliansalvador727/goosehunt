@@ -3,6 +3,7 @@
 import json
 import re
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 import yaml
@@ -386,6 +387,37 @@ def update_posting_status(job_id: str, payload: dict) -> dict:
     if cur.rowcount == 0:
         raise HTTPException(status_code=404, detail="Posting not found.")
     return {"job_id": job_id, "status": status}
+
+
+@app.delete("/api/postings/expired")
+def delete_expired_postings() -> dict:
+    """Delete every posting whose deadline has already passed."""
+    if not DB_PATH.exists():
+        raise HTTPException(
+            status_code=503,
+            detail="Postings database not found. Run `make scrape && make pipeline` first.",
+        )
+
+    # deadline_iso is a naive local datetime ("YYYY-MM-DDTHH:MM:SS"), so a
+    # lexicographic comparison against the current time is a valid ordering.
+    now_iso = datetime.now().isoformat(timespec="seconds")
+
+    with sqlite3.connect(DB_PATH) as conn:
+        try:
+            ensure_postings_schema(conn)
+            cur = conn.execute(
+                "DELETE FROM postings "
+                "WHERE deadline_iso IS NOT NULL AND deadline_iso <> '' AND deadline_iso < ?",
+                (now_iso,),
+            )
+            conn.commit()
+        except sqlite3.OperationalError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Postings database is not initialized. Run `make ingest` or `make pipeline` first.",
+            ) from exc
+
+    return {"deleted": cur.rowcount}
 
 
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
