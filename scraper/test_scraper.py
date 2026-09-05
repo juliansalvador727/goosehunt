@@ -386,3 +386,22 @@ def test_extract_ids_empty_html():
 def test_extract_ids_data_viewer_checkbox():
     html = '<input name="dataViewerSelection" value="472148" type="checkbox">'
     assert extract_ids_from_html(html) == ["472148"]
+
+
+def test_build_row_reserved_keys_pass_through():
+    """`_links` / `_ratings` ride along in raw_fields_json and never hit a mapped column."""
+    fields = {
+        "Job Title": "SWE",
+        "Level": "Junior",
+        "_links": {"Additional Application Information": ["https://x.example/apply"]},
+        "_ratings": [{"type": "table", "title": "Hiring History", "rows": [["1"]]}],
+    }
+    row = build_row("33333", "full_cycle", fields, "2026-05-01T00:00:00+00:00")
+    merged = json.loads(row["raw_fields_json"])
+    assert merged["_links"] == fields["_links"]
+    assert merged["_ratings"] == fields["_ratings"]
+    for col in ("title", "org", "location", "deadline", "work_term", "openings",
+                "division", "level", "summary", "responsibilities", "required_skills"):
+        assert isinstance(row[col], str)
+    assert row["title"] == "SWE"
+    assert row["level"] == "Junior"

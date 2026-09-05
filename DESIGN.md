@@ -20,6 +20,10 @@ WaterlooWorks exposes several global functions on the jobs page that the scraper
 
 **`window.getPostingOverview(postingId, callback)`** — fires a `$.post` to `/myAccount/co-op/direct/jobs.htm` with the posting's action key and returns the full posting HTML via callback. No new tab is opened.
 
+**`window.getPostingData(postingId, callback)`** — returns `{org, div, divId, geoData, ...}`. Only `divId` is used: it keys the employer's work term ratings report.
+
+**`window.getWorkTermRatingReportJson(divId, callback)`** — returns `{sections: [...]}` for the posting's "Work Term Ratings" tab. Each section is a `table` (`columns`, `rows`), `pieChart` (`data: [{name, y}]`), or `barChart`/`columnChart` (`categories`, `series`). Titles carry the employer name (`"Hires by Faculty<br>Acme"`). Fetched once per division per run and stored raw under `_ratings` in `raw_fields_json`; pass `--no-ratings` to skip it. `--probe-ratings N` dumps the raw JSON for N jobs to `data/ratings_sample.json` without scraping, which is how the parser in `web/main.py` gets checked against live data.
+
 **DataViewer POST** — the job listing is backed by a data viewer component. Its `dataParams.action` key (a long encoded string embedded in the page's `<script>` tags) is used to POST to the current page URL with `isDataViewer: true`, returning JSON rows of job IDs. Supports pagination at 100 per page.
 
 ### Action key extraction
@@ -49,7 +53,9 @@ div.querySelectorAll(".tag__key-value-list").forEach((container) => {
 });
 ```
 
-The full label→value dict is stored as `raw_fields_json` so schema changes don't require re-scraping.
+Anchor `href`s inside each value (`http`, `https`, `mailto`) are collected separately as `{label: [href, ...]}` under the reserved key `_links`, since `innerText` drops them.
+
+The full label→value dict is stored as `raw_fields_json` so schema changes don't require re-scraping. Keys starting with `_` (`_links`, `_ratings`) are scraper-added structured data, not WaterlooWorks labels; `pick_field` never matches them because no `FIELD_MAP` candidate is a substring of those names.
 
 ### Field mapping
 
@@ -102,7 +108,7 @@ Zero infrastructure. The entire corpus of WW postings for one term is small (hun
 ### Schema decisions
 
 - `job_id TEXT PRIMARY KEY` — WW job IDs are numeric strings; TEXT avoids leading-zero issues.
-- `raw_fields_json TEXT` — preserves the full label→value dict from the posting HTML. Used at API request time to extract compensation, application method, and apply contact info without re-scraping.
+- `raw_fields_json TEXT` — preserves the full label→value dict from the posting HTML plus the `_links` and `_ratings` reserved keys. Used at API request time to extract compensation, application method, apply contact info, duration, arrangement, level, location, documents, and the hiring-history summary without re-scraping. Because ratings live inside this JSON, a ratings change alone is enough for ingest to mark the row "updated".
 - `deadline` vs `deadline_iso` — raw deadline comes from the scraper with whitespace garbage (`"Jun 2, 2026\n\t\t\t\t\t\n\t\t\t\t\t\t11:00 PM"`). Keep the raw string for display fidelity; populate `deadline_iso` during ingest via `dateutil.parser` for sorting and filtering.
 - `embedding BLOB` — `np.float32` array of shape (384,) serialized via `.tobytes()`. Decoded on read with `np.frombuffer(blob, dtype=np.float32)`.
 - `score_*` columns are REAL, nullable — scores are populated by the scorer after ingestion, so freshly scraped rows have NULL scores until `make embed` and `make score` run.
@@ -247,6 +253,23 @@ The full corpus fits in one JSON response (a few MB at most, embeddings excluded
     "apply_method": "email",
     "apply_email": "careers@example.com",
     "apply_link": null,
+    "apply_links": [],
+    "work_term_duration": "8 month consecutive work term preferred",
+    "duration_months": 8,
+    "arrangement": "Hybrid",
+    "level": "Junior, Intermediate",
+    "levels": ["Junior", "Intermediate"],
+    "country": "Canada",
+    "region": "ON - Waterloo Region",
+    "documents_required": ["Résumé", "Grade Report"],
+    "needs_cover_letter": false,
+    "hires_total": 16,
+    "hires_by_term": {"1": 12.5, "2": 25.0, "3": 37.5, "4": 25.0},
+    "hires_by_faculty": {"Engineering": 35.0, "Mathematics": 65.0},
+    "top_programs": [["Computer Science/BCS", 9], ["Computer Engineering", 4]],
+    "rating_avg": 8.7,
+    "rating_count": 27,
+    "rating_all_avg": 8.5,
     "keyword_hits": {
       "software": [],
       "ai_ml": [],
@@ -257,11 +280,11 @@ The full corpus fits in one JSON response (a few MB at most, embeddings excluded
 ]
 ```
 
-`embedding` and `raw_fields_json` are never sent to the client. `comp_hourly`, `comp_score`, `apply_*`, and `keyword_hits` are computed at request time from the DB row.
+`embedding` and `raw_fields_json` are never sent to the client. Everything from `comp_hourly` down is computed at request time from the DB row.
 
 ### Request-time enrichment (web/main.py)
 
-Three enrichment passes run over each row before it's returned:
+Five enrichment passes run over each row before it's returned:
 
 **Compensation parsing** — parses the free-text `Compensation and Benefits` field from `raw_fields_json` using a prioritized regex pipeline:
 
@@ -274,11 +297,23 @@ Three enrichment passes run over each row before it's returned:
 
 Result is `comp_hourly` (est. $/hr). `comp_score` normalizes to [0, 1]: $16/hr → 0.0, $60/hr → 1.0.
 
-**Application method detection** — inspects `Application Delivery`, `If By Email, Send To`, `If By Website, Go To`, and `Additional Application Information` fields from `raw_fields_json`:
+**Application method detection** — on the Full Cycle board the only application labels are `Application Method` (always `WaterlooWorks`) and `Additional Application Information`, so links come from the scraper's `_links` anchors on those labels plus a URL regex over the additional-info text. Anchors there are often team LinkedIn profiles or UW visa pages rather than an application form, so URLs on `linkedin.com/in/`, `uwaterloo.ca`, and `google.com` are dropped. The older `Application Delivery` / `If By Email, Send To` / `If By Website, Go To` labels are still honoured for boards that have them.
 
-- `apply_method`: `"email"` if delivery is by email or an email address is present; `"link"` if delivery is by website or a URL is found in additional info; `"ww"` otherwise (apply through WaterlooWorks only).
-- `apply_email`: value of the `If By Email, Send To` field, or null.
-- `apply_link`: explicit website field first, otherwise the first `http(s)://` URL found in additional application info, or null.
+- `apply_links`: every remaining URL in order (explicit website field, anchors, then text URLs), deduplicated.
+- `apply_link`: the first of those, or null.
+- `apply_email`: the `If By Email, Send To` field, else the first `mailto:` anchor, or null.
+- `apply_method`: `"email"` if delivery is by email or an email address is present; `"link"` if delivery is by website or any link was found; `"ww"` otherwise (apply through WaterlooWorks only).
+
+**Posting attributes** — straight from `raw_fields_json` labels: `work_term_duration` / `duration_months` (parsed from `Work Term Duration`, so `2 work term commitment` yields null), `arrangement` (`Employment Location Arrangement`), `level` / `levels` (`Level` split on whitespace, since WW joins multiple levels with tab/newline runs), `country`, `region`, `documents_required` (split on commas) and `needs_cover_letter`.
+
+**Hiring history** — summarises `_ratings` (verified against live output, see `web/fixtures/ratings_sample.json`). Section titles are matched by lowercase prefix after stripping HTML (`<b>Hiring History</b>`) and the ` - Employer` suffix.
+
+- `hires_total`: sum of the nine per-term counts on the `Employer Division` row of the `Hiring History` table.
+- `hires_by_term`: `{"1": pct, ...}` from the `Hires by Student Work Term Number` pie, whose slices are ordinal words (`First` ... `Sixth +`).
+- `hires_by_faculty`: from the `Hires by Faculty` pie. `top_programs`: top three of `Most Frequently Hired Programs`.
+- `rating_avg` (/10), `rating_count`, `rating_all_avg`: from the `Work Term Ratings Summary` table, which WW only includes when the employer has 5+ ratings. The per-question (1-5) and distribution charts are stored raw but not parsed.
+
+Employers with no report return `{"missingReportStructure": ...}`; the scraper stores nothing for them and every field above is null or empty.
 
 **Keyword hit extraction** — `config/roles.yaml` is loaded once at startup. For each posting, the concatenated text is scanned for each role's keyword list. Returns `keyword_hits`: a dict mapping each role to the list of keywords that matched.
 
@@ -294,6 +329,8 @@ Two-pane layout: compact sortable table on the left, sticky detail panel on the 
 - Search box: instant client-side filter on title, org, location, summary, responsibilities, required skills, and job ID.
 - Role chips (SWE, AI/ML, FW, HW): toggle to show only postings with a non-zero score for that role. Multiple roles are OR'd.
 - Apply by chips (Email, Link, WW): filter by `apply_method` (`email`, `link`, or `ww`). All three are enabled by default.
+- Duration (4 mo / 8 mo), Arrangement (Remote / Hybrid / In-person), and Level (Jr / Int / Sr) chips: none checked means no filter; checked chips are OR'd within a group.
+- My term: a number input (persisted in `localStorage`) for your upcoming work term number. The "Hires my term" chip hides employers whose hiring history shows no past hires at that term number; employers with no hiring history at all are kept.
 - Posting count: shows `filtered / board total` for the selected board.
 - Ctrl+K button: opens the command palette.
 - Day/Night button: toggles the CSS variable palette and persists the selected theme in `localStorage`.
@@ -303,6 +340,7 @@ Two-pane layout: compact sortable table on the left, sticky detail panel on the 
 - All columns sortable (click header). Default sort: `score_resume` desc.
 - Score cells color-coded: green tint scales with score, grey for null/zero.
 - Pay column: displays estimated hourly as `$26/h`; hover tooltip shows full `est. $26.49/hr`.
+- Hires column: previous Waterloo co-op hires for the employer division; tooltip shows the faculty split. `T<n>%` column: share of those hires who were in work term `n` (your "My term" value); tooltip shows the full breakdown. Both columns appear only when the board has ratings data.
 - Status column: displays the local workflow status (`New`, `Maybe`, `Applied`, or `Ignored`).
 - Job ID column: click to copy to clipboard.
 
@@ -321,11 +359,13 @@ Two-pane layout: compact sortable table on the left, sticky detail panel on the 
 
 **Detail panel:**
 
-- Title, company, location, due date, pay in the header.
+- Title, company, location, due date, pay, level, arrangement, duration, and region/country in the header.
 - Local status buttons that PATCH `/api/postings/{job_id}/status`.
-- Score grid: one box per role + resume + pay, color-coded.
+- Score grid: one box per role + resume + pay, color-coded, plus the employer's work term satisfaction rating (/10) when WW reports one.
+- Apply row lists every application link found, or the apply email, or a WaterlooWorks fallback.
 - Apply row with one-click copy for email jobs or direct link for external applications.
 - WaterlooWorks-only postings, if surfaced by changing filters/UI, link back to the Employer Direct jobs page.
+- Documents chips (cover letter highlighted) and a text hiring-history block (total hires, by work term, by faculty, top programs).
 - Role-labeled keyword chips showing exactly which keywords fired and for which role.
 - Scrollable summary, responsibilities, and required skills sections.
 

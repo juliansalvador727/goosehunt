@@ -7,10 +7,14 @@ Uses WW's in-page JS API (credit: bryanling1/waterlooworks-scraper):
   2. POST to the listing endpoint (page size from WW UI, usually 50) to collect job IDs + list metadata.
   3. Call window.getPostingOverview(jobId, cb) for each job → HTML string.
   4. Parse HTML in-memory; no new tabs opened.
+  5. Call window.getPostingData(jobId, cb) → {divId, ...}, then
+     window.getWorkTermRatingReportJson(divId, cb) → {sections: [...]} for the
+     employer's work term ratings tab (cached per division within a run).
 
 Usage:
   python -m scraper.scraper --board direct       # Employer Direct (default)
   python -m scraper.scraper --board full_cycle   # Full Cycle Service
+  python -m scraper.scraper --probe-ratings 10   # dump ratings JSON for 10 jobs, no scrape
 """
 
 from __future__ import annotations
@@ -118,6 +122,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "and apps counts stay current."
         ),
     )
+    parser.add_argument(
+        "--no-ratings",
+        action="store_true",
+        help="Skip the work term ratings fetch (faster scrape).",
+    )
+    parser.add_argument(
+        "--probe-ratings",
+        nargs="?",
+        const=10,
+        default=0,
+        type=int,
+        metavar="N",
+        help=(
+            "Dump raw ratings JSON for the first N listed jobs to "
+            "data/ratings_sample.json (and one overview HTML to "
+            "data/overview_sample.html), then exit without scraping."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -221,7 +243,7 @@ def _merge_fields(
 def build_row(
     job_id: str,
     board_type: str,
-    fields: dict[str, str],
+    fields: dict,
     now: str,
     list_meta: dict[str, str] | None = None,
 ) -> dict:
@@ -889,6 +911,7 @@ async def parse_overview_html(page, html: str) -> dict[str, str]:
             const div = document.createElement('div');
             div.innerHTML = html;
             const fields = {};
+            const links = {};
             div.querySelectorAll('.tag__key-value-list').forEach(container => {
                 const labelEl = container.querySelector('.label');
                 if (!labelEl) return;
@@ -898,15 +921,132 @@ async def parse_overview_html(page, html: str) -> dict[str, str]:
                 valueRoot.querySelector('.label')?.remove();
                 const value = (valueRoot.innerText || valueRoot.textContent || '').trim();
                 if (label && value) fields[label] = value;
+                const hrefs = [...valueRoot.querySelectorAll('a[href]')]
+                    .map(a => (a.getAttribute('href') || '').trim())
+                    .filter(h => /^(https?:|mailto:)/i.test(h));
+                if (label && hrefs.length) links[label] = [...new Set(hrefs)];
             });
+            if (Object.keys(links).length) fields._links = links;
             return fields;
         }
     """, html)
 
 
+async def get_posting_data(page, job_id: str) -> dict | None:
+    """Call window.getPostingData(jobId) → {org, div, divId, geoData, ...}."""
+    try:
+        return await evaluate_retry(page, """
+            (jobId) => new Promise((resolve, reject) => {
+                if (typeof window.getPostingData !== 'function') {
+                    reject(new Error('getPostingData not defined on this page'));
+                    return;
+                }
+                window.getPostingData(jobId, (data) => {
+                    if (typeof data === 'string') {
+                        try { data = JSON.parse(data); } catch (e) { data = null; }
+                    }
+                    resolve(data || null);
+                });
+                setTimeout(() => reject(new Error('timeout after 15s')), 15000);
+            })
+        """, job_id)
+    except PlaywrightError as e:
+        print(f"[RATINGS]   ERROR: {e}")
+        return None
+
+
+async def get_work_term_ratings(page, div_id) -> dict | None:
+    """Call window.getWorkTermRatingReportJson(divId) → {sections: [...]}."""
+    try:
+        return await evaluate_retry(page, """
+            (divId) => new Promise((resolve, reject) => {
+                if (typeof window.getWorkTermRatingReportJson !== 'function') {
+                    reject(new Error('getWorkTermRatingReportJson not defined on this page'));
+                    return;
+                }
+                window.getWorkTermRatingReportJson(divId, (data) => {
+                    if (typeof data === 'string') {
+                        try { data = JSON.parse(data); } catch (e) { data = null; }
+                    }
+                    resolve(data || null);
+                });
+                setTimeout(() => reject(new Error('timeout after 15s')), 15000);
+            })
+        """, div_id)
+    except PlaywrightError as e:
+        print(f"[RATINGS]   ERROR: {e}")
+        return None
+
+
+async def ratings_api_available(page) -> bool:
+    return bool(await evaluate_retry(page, """
+        () => typeof window.getPostingData === 'function'
+            && typeof window.getWorkTermRatingReportJson === 'function'
+    """))
+
+
+async def fetch_ratings(page, job_id: str, cache: dict) -> list | None:
+    """Ratings sections for a posting's division; cached per divId for the run."""
+    data = await get_posting_data(page, job_id)
+    div_id = (data or {}).get("divId")
+    if div_id is None:
+        return None
+    key = str(div_id)
+    if key not in cache:
+        report = await get_work_term_ratings(page, div_id)
+        cache[key] = (report or {}).get("sections") or []
+    return cache[key]
+
+
+async def probe_ratings(page, config: BoardConfig, n: int) -> None:
+    """Dump raw ratings JSON for the first N listed jobs; touches no scrape output."""
+    manifest = listing_manifest_path(config.board_type)
+    if manifest.exists():
+        ids = json.loads(manifest.read_text()).get("job_ids") or []
+        print(f"[PROBE] {len(ids)} job IDs from {manifest.name}")
+    else:
+        action = await get_action_key(page)
+        items = await get_items_per_page(page)
+        ids = (await fetch_listing_page(page, action, 1, config, items, 0))["ids"]
+        print(f"[PROBE] {len(ids)} job IDs from listing page 1")
+    ids = ids[:n]
+
+    if not await ratings_api_available(page):
+        print("[PROBE] getPostingData / getWorkTermRatingReportJson not defined on this page.")
+        return
+
+    samples = []
+    for i, job_id in enumerate(ids, 1):
+        if i == 1:
+            html = await fetch_overview_with_retry(page, job_id) or ""
+            (DATA_DIR / "overview_sample.html").write_text(html)
+            print(f"[PROBE] overview HTML for {job_id} → overview_sample.html "
+                  f"({html.count('<a ')} anchor tags)")
+        data = await get_posting_data(page, job_id)
+        div_id = (data or {}).get("divId")
+        report = await get_work_term_ratings(page, div_id) if div_id is not None else None
+        sections = (report or {}).get("sections") or []
+        print(f"[PROBE] ({i}/{len(ids)}) job {job_id} div {div_id} "
+              f"{(data or {}).get('org', '')!r}: {len(sections)} section(s)")
+        for sec in sections:
+            print(f"[PROBE]     {sec.get('type')}: {sec.get('title')!r}")
+        samples.append({
+            "job_id": job_id,
+            "posting_data": data,
+            "ratings": report,
+        })
+        await asyncio.sleep(random.uniform(0.8, 1.2))
+
+    out = DATA_DIR / "ratings_sample.json"
+    out.write_text(json.dumps(samples, indent=2))
+    print(f"[PROBE] wrote {out}")
+
+
 # ── Scrape loop ───────────────────────────────────────────────────────────────
 
-async def run_scrape(ctx, page, config: BoardConfig, *, resume: bool = False) -> None:
+async def run_scrape(
+    ctx, page, config: BoardConfig, *, resume: bool = False, ratings: bool = True,
+) -> None:
     listings = await collect_all_listings(page, config)
     if not listings:
         print("[SCRAPE] No job listings found. Confirm filters are set and listings are visible, then re-run.")
@@ -935,6 +1075,11 @@ async def run_scrape(ctx, page, config: BoardConfig, *, resume: bool = False) ->
             f"({len(done)} already in postings.jsonl will be refreshed).\n"
         )
 
+    if ratings and not await ratings_api_available(page):
+        print("[SCRAPE] Ratings API not defined on this page — skipping work term ratings.")
+        ratings = False
+    ratings_cache: dict[str, list] = {}
+
     scraped = 0
     failed: list[str] = []
     for i, job_id in enumerate(todo, 1):
@@ -946,6 +1091,10 @@ async def run_scrape(ctx, page, config: BoardConfig, *, resume: bool = False) ->
             failed.append(job_id)
         else:
             fields = await parse_overview_html(page, html)
+            if ratings:
+                sections = await fetch_ratings(page, job_id, ratings_cache)
+                if sections:
+                    fields["_ratings"] = sections
             list_meta = listings.get(job_id, {})
             now = datetime.now(timezone.utc).isoformat()
             row = build_row(job_id, config.board_type, fields, now, list_meta)
@@ -954,6 +1103,8 @@ async def run_scrape(ctx, page, config: BoardConfig, *, resume: bool = False) ->
             org = row.get("org") or "(no org)"
             apps = row.get("apps_count", "")
             extra = f" apps={apps}" if apps else ""
+            if fields.get("_ratings"):
+                extra += f" ratings={len(fields['_ratings'])}"
             print(f"[SCRAPE]   → {title} @ {org}{extra}")
             scraped += 1
 
@@ -1005,7 +1156,13 @@ async def main() -> None:
         jobs_page = await wait_for_login(ctx, config)
         await wait_for_listing_ready(jobs_page)
 
-        await run_scrape(ctx, jobs_page, config, resume=args.resume)
+        if args.probe_ratings:
+            await probe_ratings(jobs_page, config, args.probe_ratings)
+        else:
+            await run_scrape(
+                ctx, jobs_page, config,
+                resume=args.resume, ratings=not args.no_ratings,
+            )
 
         await ctx.close()
 
