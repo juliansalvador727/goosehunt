@@ -60,6 +60,8 @@ To re-scrape and reprocess without restarting the server:
 make scrape BOARD=full_cycle && make pipeline
 ```
 
+The scraper also pulls each employer's Work Term Ratings tab (previous Waterloo hires, by work term number and faculty). Add `ARGS=--no-ratings` to skip it, or `ARGS="--probe-ratings 10"` to dump the raw ratings JSON for ten jobs to `data/ratings_sample.json` without scraping.
+
 ---
 
 ## Docker (any device, no Python setup)

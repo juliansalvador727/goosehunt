@@ -56,4 +56,4 @@ score: check-resume
 	$(PYTHON) -m embed.embed_resume
 
 test:
-	$(PYTHON) -m pytest scraper/test_scraper.py -v
+	$(PYTHON) -m pytest scraper/test_scraper.py web/test_main.py -v

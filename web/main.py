@@ -282,6 +282,18 @@ def comp_score(hourly: float | None) -> float | None:
 
 _URL_RE = re.compile(r'https?://[^\s\]>)\'"]+')
 
+# Labels whose anchor hrefs (scraper `_links`) count as an application link.
+_APPLY_LINK_LABELS = (
+    "If By Website, Go To",
+    "Application Method",
+    "Additional Application Information",
+)
+
+
+# Hosts that show up in application text but are never where you apply
+# (team LinkedIn profiles, UW visa/work-abroad pages, image searches).
+_NON_APPLY_HOSTS = ("linkedin.com/in/", "uwaterloo.ca", "google.com")
+
 
 def extract_apply_info(raw_json: str) -> dict:
     try:
@@ -289,17 +301,24 @@ def extract_apply_info(raw_json: str) -> dict:
     except Exception:
         return {}
 
-    delivery = (d.get("Application Delivery") or "").lower()
-    email = (d.get("If By Email, Send To") or "").strip()
-    website = (d.get("If By Website, Go To") or "").strip()
+    links = d.get("_links") or {}
+    hrefs = [h for label in _APPLY_LINK_LABELS for h in links.get(label, [])]
+    mailto = next((h[7:] for h in hrefs if h.lower().startswith("mailto:")), "")
     add_info = d.get("Additional Application Information") or ""
 
-    # Explicit website field takes priority, then hunt for a URL in additional info
-    if website:
-        link = website.rstrip(".,)")
-    else:
-        m = _URL_RE.search(add_info)
-        link = m.group(0).rstrip(".,)") if m else None
+    # Explicit website field first, then anchor hrefs, then bare URLs in the text.
+    candidates = [(d.get("If By Website, Go To") or "").strip()]
+    candidates += [h for h in hrefs if h.lower().startswith("http")]
+    candidates += _URL_RE.findall(add_info)
+    apply_links: list[str] = []
+    for url in candidates:
+        url = url.rstrip(".,)")
+        if url and url not in apply_links and not any(h in url.lower() for h in _NON_APPLY_HOSTS):
+            apply_links.append(url)
+
+    delivery = (d.get("Application Delivery") or "").lower()
+    email = (d.get("If By Email, Send To") or "").strip() or mailto
+    link = apply_links[0] if apply_links else None
 
     if "email" in delivery or email:
         method = "email"
@@ -311,8 +330,156 @@ def extract_apply_info(raw_json: str) -> dict:
     return {
         "apply_method": method,
         "apply_email": email or None,
-        "apply_link": link or None,
+        "apply_link": link,
+        "apply_links": apply_links,
     }
+
+
+_MONTHS_RE = re.compile(r"(\d+)\s*month", re.I)
+
+
+def extract_posting_attrs(raw_json: str) -> dict:
+    """Duration, arrangement, level, location, and documents from raw_fields_json."""
+    try:
+        d = json.loads(raw_json)
+    except Exception:
+        return {}
+
+    duration = (d.get("Work Term Duration") or "").strip()
+    m = _MONTHS_RE.search(duration)
+    # WW joins multi-level values with whitespace runs ("Junior\n\t\tIntermediate").
+    levels = (d.get("Level") or "").split()
+    docs = [x.strip() for x in (d.get("Application Documents Required") or "").split(",")]
+    docs = [x for x in docs if x]
+    return {
+        "work_term_duration": duration or None,
+        "duration_months": int(m.group(1)) if m else None,
+        "arrangement": (d.get("Employment Location Arrangement") or "").strip() or None,
+        "level": ", ".join(levels) or None,
+        "levels": levels,
+        "country": (d.get("Job - Country") or "").strip() or None,
+        "region": (d.get("Region") or "").strip() or None,
+        "documents_required": docs,
+        "needs_cover_letter": any("cover letter" in x.lower() for x in docs),
+    }
+
+
+_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _section_title(section: dict) -> str:
+    """Lowercase title with HTML and the trailing org/division name removed.
+
+    Real titles look like "<b>Hiring History</b>", "Hires by Faculty<br>Acme - HQ",
+    "Most Frequently Hired Programs - Acme - HQ".
+    """
+    text = _TAG_RE.sub("\n", str(section.get("title") or "")).strip()
+    return text.split("\n")[0].split(" - ")[0].strip().lower()
+
+
+# "Hires by Student Work Term Number" pie slices are ordinal words.
+_ORDINALS = {
+    "first": "1", "second": "2", "third": "3", "fourth": "4",
+    "fifth": "5", "sixth": "6", "seventh": "7", "eighth": "8",
+}
+
+
+def _term_number(name: str) -> str | None:
+    m = re.search(r"\d+", name)
+    if m:
+        return m.group(0)
+    for word, num in _ORDINALS.items():
+        if name.lower().startswith(word):
+            return num
+    return None
+
+
+def _division_row(section: dict) -> list:
+    """Rows are [org, division, (all students)]; prefer the division row."""
+    rows = section.get("rows") or []
+    for row in rows:
+        if row and "division" in str(row[0]).lower():
+            return row
+    return rows[0] if rows else []
+
+
+def _num(value) -> float | None:
+    try:
+        return float(str(value).replace(",", "").replace("%", "").strip())
+    except (ValueError, TypeError):
+        return None
+
+
+def _pie_data(section: dict) -> dict[str, float]:
+    out: dict[str, float] = {}
+    for point in section.get("data") or []:
+        y = _num(point.get("y"))
+        if y is not None and point.get("name"):
+            out[str(point["name"])] = y
+    return out
+
+
+def extract_ratings(raw_json: str) -> dict:
+    """Summarise the `_ratings` sections (WW work term ratings tab) stored by the scraper.
+
+    Shape follows bryanling1/waterlooworks-scraper's typing of
+    getWorkTermRatingReportJson: table / pieChart / barChart / columnChart sections
+    whose titles carry the employer name (e.g. "Hires by Faculty<br>Acme").
+    """
+    empty = {
+        "hires_total": None,
+        "hires_by_term": {},
+        "hires_by_faculty": {},
+        "top_programs": [],
+        "rating_avg": None,
+        "rating_count": None,
+        "rating_all_avg": None,
+    }
+    try:
+        sections = json.loads(raw_json).get("_ratings") or []
+    except Exception:
+        return empty
+    if not isinstance(sections, list):
+        return empty
+
+    out = dict(empty)
+    for sec in sections:
+        if not isinstance(sec, dict):
+            continue
+        title = _section_title(sec)
+        kind = sec.get("type")
+        if kind == "table" and title.startswith("hiring history"):
+            # Row: ["Employer Division", "<name>", <count per term> x 9]
+            nums = [n for n in (_num(c) for c in _division_row(sec)[2:]) if n is not None]
+            if nums:
+                out["hires_total"] = int(sum(nums))
+        elif kind == "table" and title.startswith("work term ratings summary"):
+            # Row: ["Employer Division", "<name>", "<avg /10>", "<count>"]
+            row = _division_row(sec)
+            if len(row) >= 4:
+                out["rating_avg"] = _num(row[2])
+                count = _num(row[3])
+                out["rating_count"] = int(count) if count is not None else None
+            for row in sec.get("rows") or []:
+                if row and "all co-op" in str(row[0]).lower() and len(row) >= 3:
+                    out["rating_all_avg"] = _num(row[2])
+        elif kind == "pieChart" and title.startswith("hires by") and "work term" in title:
+            for name, pct in _pie_data(sec).items():
+                num = _term_number(name)
+                if num:
+                    out["hires_by_term"][num] = pct
+        elif kind == "pieChart" and title.startswith("hires by faculty"):
+            out["hires_by_faculty"] = _pie_data(sec)
+        elif kind in ("barChart", "columnChart") and title.startswith("most frequently hired"):
+            cats = sec.get("categories") or []
+            series = sec.get("series") or []
+            data = series[0].get("data") or [] if series else []
+            pairs = [
+                (str(c), int(v)) for c, v in zip(cats, data)
+                if c and _num(v) is not None and _num(v) > 0
+            ]
+            out["top_programs"] = sorted(pairs, key=lambda x: -x[1])[:3]
+    return out
 
 
 @app.get("/api/postings")
@@ -346,6 +513,8 @@ def get_postings() -> list[dict]:
         row["comp_hourly"] = round(hourly, 2) if hourly is not None else None
         row["comp_score"] = round(comp_score(hourly), 3) if hourly is not None else None
         row.update(extract_apply_info(raw))
+        row.update(extract_posting_attrs(raw))
+        row.update(extract_ratings(raw))
         text = " ".join(filter(None, [
             row.get("title"), row.get("org"),
             row.get("summary"), row.get("responsibilities"), row.get("required_skills"),

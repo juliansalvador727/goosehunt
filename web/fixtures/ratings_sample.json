@@ -1,0 +1,260 @@
+{
+ "_comment": "Real getWorkTermRatingReportJson output for one Full Cycle employer (probe run 2026-09-05), descriptions trimmed.",
+ "sections": [
+  {
+   "type": "text",
+   "value": "<div style = \"font-size: 12pt\"><strong>Organization:</strong> WOLF Advanced Technology</div>"
+  },
+  {
+   "type": "text",
+   "value": "<div style=\"font-size: 12pt\"><strong>Division:</strong> WOLF Advanced Technology - Divisional Office</div>"
+  },
+  {
+   "columns": [
+    "",
+    "Students Hired",
+    "2023 - Fall",
+    "2024 - Winter",
+    "2024 - Spring",
+    "2024 - Fall",
+    "2025 - Winter",
+    "2025 - Spring",
+    "2025 - Fall",
+    "2026 - Winter",
+    "2026 - Spring"
+   ],
+   "description": "(trimmed)",
+   "type": "table",
+   "title": "<b>Hiring History</b>",
+   "rows": [
+    [
+     "Employer Organization",
+     "WOLF Advanced Technology",
+     "1",
+     "3",
+     "3",
+     "8",
+     "7",
+     "6",
+     "7",
+     "10",
+     "6"
+    ],
+    [
+     "Employer Division",
+     "WOLF Advanced Technology - Divisional Office",
+     "1",
+     "3",
+     "3",
+     "8",
+     "7",
+     "6",
+     "7",
+     "10",
+     "6"
+    ]
+   ]
+  },
+  {
+   "decimalPlaces": "0",
+   "data": [
+    {
+     "name": "Arts",
+     "y": "27"
+    },
+    {
+     "name": "Engineering",
+     "y": "53"
+    },
+    {
+     "name": "Mathematics",
+     "y": "16"
+    },
+    {
+     "name": "Science",
+     "y": "4"
+    }
+   ],
+   "width": "6",
+   "type": "pieChart",
+   "title": "Hires by Faculty<br>WOLF Advanced Technology - Divisional Office",
+   "valueSuffix": "%"
+  },
+  {
+   "decimalPlaces": "0",
+   "data": [
+    {
+     "name": "First",
+     "y": "4"
+    },
+    {
+     "name": "Second",
+     "y": "20"
+    },
+    {
+     "name": "Third",
+     "y": "27"
+    },
+    {
+     "name": "Fourth",
+     "y": "24"
+    },
+    {
+     "name": "Fifth",
+     "y": "22"
+    },
+    {
+     "name": "Sixth +",
+     "y": "4"
+    }
+   ],
+   "width": "6",
+   "type": "pieChart",
+   "title": "Hires by Student Work Term Number<br>WOLF Advanced Technology - Divisional Office",
+   "valueSuffix": "%"
+  },
+  {
+   "decimalPlaces": "0",
+   "legend": "disabled",
+   "series": [
+    {
+     "data": [
+      7,
+      7,
+      7,
+      5,
+      4,
+      4,
+      2,
+      2,
+      2,
+      2
+     ],
+     "name": "Hires"
+    }
+   ],
+   "categories": [
+    "Electrical Engineering",
+    "Mechatronics Engineering",
+    "Nanotechnology Engineering",
+    "Psychology",
+    "Communication Studies",
+    "Computer Science/BCS",
+    "Double Degree (BBA/BCS)",
+    "Economics",
+    "Global Business & Digital Arts",
+    "Liberal Studies"
+   ],
+   "type": "barChart",
+   "title": "Most Frequently Hired Programs - WOLF Advanced Technology - Divisional Office"
+  },
+  {
+   "columns": [
+    "",
+    "Work Term Ratings - Fall 2023 to Spring 2026",
+    "Average Work Term Satisfaction Rating",
+    "Number Of Ratings"
+   ],
+   "description": "(trimmed)",
+   "type": "table",
+   "title": "<b>Work Term Ratings Summary</b>",
+   "rows": [
+    [
+     "Employer Organization",
+     "WOLF Advanced Technology",
+     "8.7",
+     "27"
+    ],
+    [
+     "Employer Division",
+     "WOLF Advanced Technology - Divisional Office",
+     "8.7",
+     "27"
+    ],
+    [
+     "All Co-op Students Average",
+     "Average Work Term Satisfaction - All Co-op Students",
+     "8.5",
+     "45728"
+    ]
+   ]
+  },
+  {
+   "decimalPlaces": "0",
+   "series": [
+    {
+     "data": [
+      0,
+      0,
+      0,
+      4,
+      4,
+      4,
+      0,
+      19,
+      33,
+      37
+     ],
+     "name": "WOLF Advanced Technology"
+    }
+   ],
+   "categories": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10"
+   ],
+   "type": "columnChart",
+   "title": "Overall Work Term Satisfaction - Distribution of Student Ratings (1-10 scale)<br>Fall 2023 to Spring 2026",
+   "valueSuffix": "%"
+  },
+  {
+   "decimalPlaces": "1",
+   "series": [
+    {
+     "data": [
+      4.7,
+      4.6,
+      4.5,
+      4,
+      4.2,
+      4.3,
+      4
+     ],
+     "name": "WOLF Advanced Technology",
+     "type": "column"
+    },
+    {
+     "data": [
+      4.5,
+      4.4,
+      4.4,
+      4.1,
+      4.2,
+      4,
+      4
+     ],
+     "name": "Average of All Co-op Students",
+     "type": "spline"
+    }
+   ],
+   "categories": [
+    "Q1. Availability of employer support (e.g. start of the term in the company, ongoing interactions with supervisors/others, general feedback, and end-of-term transition)",
+    "Q2. Opportunities to learn or develop new skills",
+    "Q3. Opportunities to make meaningful contributions at work",
+    "Q4. Opportunities to expand your professional network",
+    "Q5. Appropriate compensation and/or benefits",
+    "Q6. How closely your work was related to your academic program",
+    "Q7. How closely your work was related to the skills you are developing at university"
+   ],
+   "type": "mixedChart",
+   "title": "Average Rating by Question (1-5 scale)<br>Fall 2023 to Spring 2026"
+  }
+ ]
+}

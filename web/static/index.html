@@ -189,14 +189,35 @@
       /* ── topbar ───────────────────────────────────────────────── */
       #topbar {
         flex-shrink: 0;
-        height: 44px;
+        min-height: 44px;
         background: var(--s1);
         border-bottom: 1px solid var(--bd);
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
-        padding: 0 14px;
-        gap: 8px;
+        padding: 6px 14px;
+        gap: 6px 8px;
         z-index: 100;
+      }
+      .chip-lbl {
+        font-size: 11px;
+        color: var(--tx3);
+        white-space: nowrap;
+      }
+      #my-term {
+        width: 38px;
+        padding: 3px 4px;
+        background: var(--s2);
+        border: 1px solid var(--bd);
+        border-radius: 5px;
+        color: var(--tx);
+        font-family: var(--mono);
+        font-size: 11px;
+        text-align: center;
+      }
+      #my-term:focus {
+        outline: none;
+        border-color: var(--ac);
       }
       .logo {
         display: inline-flex;
@@ -790,6 +811,7 @@
       /* apply row */
       .apply-row {
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
         gap: 8px;
         padding: 9px 11px;
@@ -1093,6 +1115,61 @@
         </button>
       </div>
 
+      <div class="vdiv"></div>
+
+      <div class="chips">
+        <template x-for="d in Object.keys(fDur)" :key="d">
+          <label class="chip" :class="{on: fDur[d]}">
+            <input type="checkbox" x-model="fDur[d]" @change="applyFilters()" />
+            <span x-text="d + ' mo'"></span>
+          </label>
+        </template>
+      </div>
+
+      <div class="vdiv"></div>
+
+      <div class="chips">
+        <template x-for="a in Object.keys(fArr)" :key="a">
+          <label class="chip" :class="{on: fArr[a]}">
+            <input type="checkbox" x-model="fArr[a]" @change="applyFilters()" />
+            <span x-text="a"></span>
+          </label>
+        </template>
+      </div>
+
+      <div class="vdiv"></div>
+
+      <div class="chips">
+        <template x-for="l in Object.keys(fLvl)" :key="l">
+          <label class="chip" :class="{on: fLvl[l]}" :title="l">
+            <input type="checkbox" x-model="fLvl[l]" @change="applyFilters()" />
+            <span x-text="lvlLabel(l)"></span>
+          </label>
+        </template>
+      </div>
+
+      <div class="vdiv"></div>
+
+      <div class="chips">
+        <span class="chip-lbl">My term</span>
+        <input
+          type="number"
+          id="my-term"
+          min="1"
+          max="8"
+          :value="myTerm"
+          @change="setMyTerm($event.target.value)"
+          title="Your upcoming work term number"
+        />
+        <label
+          class="chip"
+          :class="{on: fMyTerm}"
+          title="Hide employers whose hiring history shows no past hires at your work term number (employers with no history stay)"
+        >
+          <input type="checkbox" x-model="fMyTerm" @change="applyFilters()" />Hires my term
+        </label>
+      </div>
+
       <div class="topbar-r">
         <span class="count" x-text="jobCountLabel"></span>
         <button class="pal-btn" @click="_openPal()" title="Command palette">
@@ -1214,6 +1291,34 @@
                   ></i>
                 </th>
                 <th
+                  x-show="hasRatings"
+                  style="min-width: 40px; text-align: center"
+                  @click="srt('hires_total')"
+                  :class="{sk:sortCol==='hires_total'}"
+                  title="Previous Waterloo co-op hires (Work Term Ratings tab)"
+                >
+                  Hires
+                  <i
+                    class="sa"
+                    :class="{on:sortCol==='hires_total'}"
+                    x-text="arr('hires_total')"
+                  ></i>
+                </th>
+                <th
+                  x-show="hasRatings"
+                  style="min-width: 44px; text-align: center"
+                  @click="srt('term_pct')"
+                  :class="{sk:sortCol==='term_pct'}"
+                  :title="'% of past hires who were in work term ' + myTerm"
+                >
+                  T<span x-text="myTerm"></span>%
+                  <i
+                    class="sa"
+                    :class="{on:sortCol==='term_pct'}"
+                    x-text="arr('term_pct')"
+                  ></i>
+                </th>
+                <th
                   style="min-width: 28px; text-align: center"
                   @click="srt('openings')"
                   :class="{sk:sortCol==='openings'}"
@@ -1291,6 +1396,18 @@
                     x-text="fmtPay(p.comp_hourly)"
                     :title="p.comp_hourly != null ? 'est. $'+p.comp_hourly.toFixed(2)+'/hr' : 'not listed'"
                   ></td>
+                  <td
+                    x-show="hasRatings"
+                    class="nc"
+                    :title="facultyTip(p)"
+                    x-text="p.hires_total ?? '—'"
+                  ></td>
+                  <td
+                    x-show="hasRatings"
+                    class="nc"
+                    :title="termTip(p)"
+                    x-text="fmtPct(p.term_pct)"
+                  ></td>
                   <td class="nc" x-text="p.openings ?? '—'"></td>
                   <td
                     x-show="board === 'full_cycle'"
@@ -1352,11 +1469,19 @@
                 x-text="fmtDueFull(selPosting.deadline_iso)"
               ></span>
               <template x-if="selPosting.comp_hourly">
-                <span class="dp-sep">·</span>
-                <span
-                  class="pay-inline"
-                  x-text="'$'+selPosting.comp_hourly.toFixed(0)+'/h'"
-                ></span>
+                <span>
+                  <span class="dp-sep">·</span>
+                  <span
+                    class="pay-inline"
+                    x-text="'$'+selPosting.comp_hourly.toFixed(0)+'/h'"
+                  ></span>
+                </span>
+              </template>
+              <template x-for="txt in metaExtras(selPosting)" :key="txt">
+                <span>
+                  <span class="dp-sep">·</span>
+                  <span x-text="txt"></span>
+                </span>
               </template>
             </div>
 
@@ -1399,6 +1524,19 @@
                   x-text="fmtPay(selPosting.comp_hourly)"
                 ></div>
               </div>
+              <template x-if="selPosting.rating_avg != null">
+                <div
+                  class="sb"
+                  :title="selPosting.rating_count + ' ratings · all co-op average ' + selPosting.rating_all_avg"
+                >
+                  <div class="sb-label">Rating</div>
+                  <div
+                    class="sb-val"
+                    :style="scColor(ratingScore(selPosting.rating_avg))"
+                    x-text="selPosting.rating_avg.toFixed(1) + '/10'"
+                  ></div>
+                </div>
+              </template>
             </div>
 
             <!-- apply -->
@@ -1411,13 +1549,14 @@
                   x-text="selPosting.apply_email"
                 ></a>
               </template>
-              <template x-if="selPosting.apply_link && !selPosting.apply_email">
+              <template x-for="l in selPosting.apply_links || []" :key="l">
                 <a
                   class="apply-val"
-                  :href="selPosting.apply_link"
+                  :href="l"
                   target="_blank"
                   rel="noopener"
-                  x-text="selPosting.apply_link"
+                  :title="l"
+                  x-text="l"
                 ></a>
               </template>
               <template
@@ -1452,6 +1591,28 @@
                 x-text="cpId_===selPosting.job_id ? '✓' : 'c'"
               ></button>
             </div>
+
+            <template x-if="selPosting.documents_required?.length">
+              <div class="sec">
+                <div class="sec-lbl">Documents</div>
+                <div class="kw-chips">
+                  <template x-for="doc in selPosting.documents_required" :key="doc">
+                    <span
+                      class="kw"
+                      :class="{'kw-fde': /cover letter/i.test(doc)}"
+                      x-text="doc"
+                    ></span>
+                  </template>
+                </div>
+              </div>
+            </template>
+
+            <template x-if="selPosting.hires_total != null">
+              <div class="sec">
+                <div class="sec-lbl">Hiring history</div>
+                <div class="sec-txt" x-text="hiringText(selPosting)"></div>
+              </div>
+            </template>
 
             <!-- keyword hits -->
             <template
@@ -1543,6 +1704,11 @@
           fEmail: true,
           fLink: true,
           fWw: true,
+          fDur: { 4: false, 8: false },
+          fArr: { Remote: false, Hybrid: false, "In-person": false },
+          fLvl: { Junior: false, Intermediate: false, Senior: false },
+          myTerm: 1,
+          fMyTerm: false,
           deletingExpired: false,
           cpId_: null,
           cpEmail_: false,
@@ -1570,6 +1736,10 @@
             return this.postings.filter((p) => p.board_type === this.board);
           },
 
+          get hasRatings() {
+            return this.boardPostings.some((p) => p.hires_total != null);
+          },
+
           get jobCountLabel() {
             if (this.loading) return "loading…";
             const n = this.boardPostings.length;
@@ -1579,6 +1749,7 @@
 
           async init() {
             this.theme = localStorage.getItem("goosehunt.theme") || "night";
+            this.myTerm = parseInt(localStorage.getItem("goosehunt.myTerm"), 10) || 1;
             try {
               const r = await fetch("/api/postings");
               if (!r.ok) {
@@ -1631,6 +1802,12 @@
             this.applyFilters();
           },
 
+          setMyTerm(v) {
+            this.myTerm = Math.min(8, Math.max(1, parseInt(v, 10) || 1));
+            localStorage.setItem("goosehunt.myTerm", this.myTerm);
+            this.applyFilters();
+          },
+
           async deleteExpired() {
             if (this.deletingExpired) return;
             const now = Date.now();
@@ -1674,6 +1851,10 @@
           },
 
           applyFilters() {
+            const term = String(this.myTerm);
+            this.postings.forEach((p) => {
+              p.term_pct = p.hires_by_term?.[term] ?? null;
+            });
             let rows = this.postings.filter((p) => p.board_type === this.board);
             const q = this.search.trim().toLowerCase();
             if (q)
@@ -1693,6 +1874,18 @@
                 active.some((r) => (p["score_" + r] ?? 0) > 0),
               );
             }
+            const durs = Object.keys(this.fDur).filter((d) => this.fDur[d]).map(Number);
+            if (durs.length)
+              rows = rows.filter((p) => durs.includes(p.duration_months));
+            const arrs = Object.keys(this.fArr).filter((a) => this.fArr[a]);
+            if (arrs.length) rows = rows.filter((p) => arrs.includes(p.arrangement));
+            const lvls = Object.keys(this.fLvl).filter((l) => this.fLvl[l]);
+            if (lvls.length)
+              rows = rows.filter((p) => (p.levels || []).some((l) => lvls.includes(l)));
+            // Keep employers with no hiring history; drop only those whose
+            // history shows no hires at my term number.
+            if (this.fMyTerm)
+              rows = rows.filter((p) => p.hires_total == null || p.term_pct > 0);
             if (!this.fEmail && !this.fLink && !this.fWw) {
               this.filtered = [];
               return;
@@ -1870,6 +2063,18 @@
                 fn: s("deadline_iso"),
               },
               {
+                id: "shr",
+                cat: "sort",
+                label: "Sort by previous hires",
+                fn: s("hires_total"),
+              },
+              {
+                id: "stp",
+                cat: "sort",
+                label: "Sort by hires at my term",
+                fn: s("term_pct"),
+              },
+              {
                 id: "sfw",
                 cat: "sort",
                 label: "Sort by Firmware score",
@@ -1910,6 +2115,30 @@
                 cat: "filter",
                 label: "Toggle WW filter",
                 fn: f(() => (this.fWw = !this.fWw)),
+              },
+              ...Object.keys(this.fDur).map((d) => ({
+                id: "fd" + d,
+                cat: "filter",
+                label: `Toggle ${d} month filter`,
+                fn: f(() => (this.fDur[d] = !this.fDur[d])),
+              })),
+              ...Object.keys(this.fArr).map((a) => ({
+                id: "fa" + a,
+                cat: "filter",
+                label: `Toggle ${a} filter`,
+                fn: f(() => (this.fArr[a] = !this.fArr[a])),
+              })),
+              ...Object.keys(this.fLvl).map((l) => ({
+                id: "fl" + l,
+                cat: "filter",
+                label: `Toggle ${l} level filter`,
+                fn: f(() => (this.fLvl[l] = !this.fLvl[l])),
+              })),
+              {
+                id: "fmt",
+                cat: "filter",
+                label: "Toggle Hires my term filter",
+                fn: f(() => (this.fMyTerm = !this.fMyTerm)),
               },
               {
                 id: "ffw",
@@ -1961,6 +2190,10 @@
                   this.fEmail = true;
                   this.fLink = true;
                   this.fWw = true;
+                  [this.fDur, this.fArr, this.fLvl].forEach((g) =>
+                    Object.keys(g).forEach((k) => (g[k] = false)),
+                  );
+                  this.fMyTerm = false;
                 }),
               },
               {
@@ -2072,6 +2305,59 @@
           fmtPay(h) {
             if (h == null) return "—";
             return "$" + h.toFixed(0) + "/h";
+          },
+
+          fmtPct(v) {
+            return v == null ? "—" : v.toFixed(0) + "%";
+          },
+
+          lvlLabel(l) {
+            return { Junior: "Jr", Intermediate: "Int", Senior: "Sr" }[l] || l;
+          },
+
+          metaExtras(p) {
+            const loc = [p.region, p.country].filter(Boolean).join(", ");
+            return [p.level, p.arrangement, p.work_term_duration, loc].filter(Boolean);
+          },
+
+          _pctList(obj, fmtKey = (k) => k) {
+            return Object.entries(obj || {})
+              .map(([k, v]) => `${fmtKey(k)} ${Number(v).toFixed(0)}%`)
+              .join(" · ");
+          },
+
+          facultyTip(p) {
+            if (p.hires_total == null) return "no hiring history";
+            return `${p.hires_total} previous hires\n${this._pctList(p.hires_by_faculty)}`;
+          },
+
+          termTip(p) {
+            if (p.hires_total == null) return "no hiring history";
+            return "by work term: " + this._pctList(p.hires_by_term, (k) => "T" + k);
+          },
+
+          ratingScore(avg) {
+            // Work term satisfaction /10: 7 → 0, 10 → 1 (all co-op average is ~8.5).
+            return Math.max(0, Math.min(1, (avg - 7) / 3));
+          },
+
+          hiringText(p) {
+            const lines = [`Previous Waterloo hires: ${p.hires_total}`];
+            if (p.rating_avg != null)
+              lines.push(
+                `Satisfaction: ${p.rating_avg}/10 from ${p.rating_count} ratings` +
+                  (p.rating_all_avg != null ? ` (all co-op: ${p.rating_all_avg})` : ""),
+              );
+            if (Object.keys(p.hires_by_term || {}).length)
+              lines.push("By work term: " + this._pctList(p.hires_by_term, (k) => "T" + k));
+            if (Object.keys(p.hires_by_faculty || {}).length)
+              lines.push("By faculty: " + this._pctList(p.hires_by_faculty));
+            if (p.top_programs?.length)
+              lines.push(
+                "Top programs: " +
+                  p.top_programs.map(([name, n]) => `${name} (${n})`).join(", "),
+              );
+            return lines.join("\n");
           },
 
           fmtDue(iso) {
