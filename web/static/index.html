@@ -44,6 +44,8 @@
         --amber: #f59e0b;
         --mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
         --sans: "Inter", system-ui, -apple-system, sans-serif;
+        --filter-w: 260px;
+        --drawer-w: 720px;
       }
       body.light {
         --bg: #eceff7;
@@ -89,18 +91,37 @@
         height: 100%;
         overflow: hidden;
       }
-
       body {
         font-family: var(--sans);
-        font-size: 13px;
+        font-size: 14px;
         background: var(--bg);
         color: var(--tx);
         display: flex;
         flex-direction: column;
         height: 100vh;
       }
+      body.dragging {
+        user-select: none;
+        cursor: col-resize;
+      }
+      button,
+      input,
+      select {
+        font-family: var(--sans);
+        font-size: 13px;
+        color: var(--tx);
+      }
+      :focus-visible {
+        outline: 2px solid var(--ac);
+        outline-offset: 1px;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          transition: none !important;
+        }
+      }
 
-      /* ── command palette overlay ──────────────────────────────── */
+      /* ── command palette ─────────────────────────────────────── */
       #pal-overlay {
         position: fixed;
         inset: 0;
@@ -113,7 +134,7 @@
         padding-top: 14vh;
       }
       #palette {
-        width: 520px;
+        width: 540px;
         background: var(--s2);
         border: 1px solid var(--bd2);
         border-radius: 10px;
@@ -126,8 +147,6 @@
         background: transparent;
         border: none;
         border-bottom: 1px solid var(--bd);
-        color: var(--tx);
-        font-family: var(--sans);
         font-size: 14px;
       }
       #pal-input:focus {
@@ -137,7 +156,7 @@
         color: var(--tx3);
       }
       .pal-list {
-        max-height: 300px;
+        max-height: 320px;
         overflow-y: auto;
         padding: 5px;
       }
@@ -149,9 +168,6 @@
         cursor: pointer;
         font-size: 13px;
         color: var(--tx2);
-        transition:
-          background 0.07s,
-          color 0.07s;
         gap: 10px;
       }
       .pal-item:hover,
@@ -160,12 +176,10 @@
         color: var(--tx);
       }
       .pal-item .pal-cat {
-        font-size: 10px;
+        font-size: 11px;
         font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
         color: var(--tx3);
-        width: 42px;
+        width: 52px;
         flex-shrink: 0;
       }
       .pal-footer {
@@ -173,168 +187,43 @@
         gap: 14px;
         padding: 8px 16px;
         border-top: 1px solid var(--bd);
-        font-size: 10px;
+        font-size: 11px;
         color: var(--tx3);
       }
-      .pal-footer kbd {
+      kbd {
         font-family: var(--mono);
-        font-size: 9px;
+        font-size: 10px;
         background: var(--s3);
         border: 1px solid var(--bd2);
         border-radius: 3px;
-        padding: 1px 4px;
+        padding: 1px 5px;
         margin-right: 3px;
       }
 
-      /* ── topbar ───────────────────────────────────────────────── */
+      /* ── topbar ──────────────────────────────────────────────── */
       #topbar {
         flex-shrink: 0;
-        min-height: 44px;
+        height: 46px;
         background: var(--s1);
         border-bottom: 1px solid var(--bd);
         display: flex;
-        flex-wrap: wrap;
         align-items: center;
-        padding: 6px 14px;
-        gap: 6px 8px;
-        z-index: 100;
-      }
-      .chip-lbl {
-        font-size: 11px;
-        color: var(--tx3);
-        white-space: nowrap;
-      }
-      #my-term {
-        width: 38px;
-        padding: 3px 4px;
-        background: var(--s2);
-        border: 1px solid var(--bd);
-        border-radius: 5px;
-        color: var(--tx);
-        font-family: var(--mono);
-        font-size: 11px;
-        text-align: center;
-      }
-      #my-term:focus {
-        outline: none;
-        border-color: var(--ac);
+        padding: 0 14px;
+        gap: 10px;
       }
       .logo {
         display: inline-flex;
         align-items: center;
         gap: 7px;
-        font-size: 13px;
+        font-size: 14px;
         font-weight: 600;
-        color: var(--tx);
-        letter-spacing: -0.01em;
-        margin-right: 4px;
-        flex-shrink: 0;
+        margin-right: 6px;
       }
       .logo-img {
         width: 22px;
         height: 22px;
         object-fit: contain;
-        display: block;
       }
-
-      /* search */
-      .srch-wrap {
-        position: relative;
-        flex-shrink: 0;
-      }
-      .srch-wrap .srch-icon {
-        position: absolute;
-        left: 9px;
-        top: 50%;
-        transform: translateY(-50%);
-        color: var(--tx3);
-        font-size: 11px;
-        pointer-events: none;
-        font-style: normal;
-      }
-
-      .col-icon {
-        display: inline-block;
-        width: 13px;
-        height: 13px;
-        vertical-align: -2px;
-        margin-right: 2px;
-        color: var(--tx3);
-        stroke: currentColor;
-        fill: none;
-        stroke-width: 2;
-        stroke-linecap: round;
-        stroke-linejoin: round;
-      }
-      #search {
-        width: 210px;
-        padding: 5px 10px 5px 27px;
-        background: var(--s2);
-        border: 1px solid var(--bd);
-        border-radius: 6px;
-        color: var(--tx);
-        font-family: var(--sans);
-        font-size: 12px;
-        transition:
-          border-color 0.15s,
-          width 0.18s;
-      }
-      #search::placeholder {
-        color: var(--tx3);
-      }
-      #search:focus {
-        outline: none;
-        border-color: var(--ac);
-        width: 270px;
-      }
-
-      .vdiv {
-        width: 1px;
-        height: 20px;
-        background: var(--bd);
-        margin: 0 11px;
-        flex-shrink: 0;
-      }
-
-      /* chips */
-      .chips {
-        display: flex;
-        gap: 4px;
-        align-items: center;
-      }
-      .chip {
-        display: flex;
-        align-items: center;
-        gap: 3px;
-        padding: 3px 8px;
-        border: 1px solid var(--bd);
-        border-radius: 5px;
-        cursor: pointer;
-        user-select: none;
-        color: var(--tx3);
-        font-size: 11px;
-        font-weight: 500;
-        transition:
-          border-color 0.1s,
-          color 0.1s,
-          background 0.1s;
-        white-space: nowrap;
-        background: transparent;
-      }
-      .chip:hover {
-        border-color: var(--bd2);
-        color: var(--tx2);
-      }
-      .chip.on {
-        background: var(--ac-bg);
-        border-color: var(--ac);
-        color: var(--ac);
-      }
-      .chip input {
-        display: none;
-      }
-
-      /* board dropdown */
       .board-drop {
         position: relative;
       }
@@ -342,17 +231,13 @@
         display: flex;
         align-items: center;
         gap: 6px;
-        padding: 5px 10px;
+        padding: 6px 11px;
         background: var(--s2);
         border: 1px solid var(--bd);
         border-radius: 6px;
-        color: var(--tx);
-        font-family: var(--sans);
-        font-size: 12px;
         cursor: pointer;
         user-select: none;
         white-space: nowrap;
-        transition: border-color 0.15s;
       }
       .board-trigger:hover {
         border-color: var(--ac);
@@ -365,7 +250,7 @@
         position: absolute;
         top: calc(100% + 6px);
         left: 0;
-        min-width: 148px;
+        min-width: 160px;
         background: var(--s2);
         border: 1px solid var(--bd2);
         border-radius: 7px;
@@ -377,14 +262,10 @@
         display: flex;
         align-items: center;
         gap: 8px;
-        padding: 7px 10px;
+        padding: 8px 10px;
         border-radius: 5px;
-        font-size: 12.5px;
         color: var(--tx2);
         cursor: pointer;
-        transition:
-          background 0.07s,
-          color 0.07s;
       }
       .board-opt:hover {
         background: var(--s3);
@@ -398,55 +279,36 @@
         color: var(--ac);
         width: 12px;
       }
-
       .topbar-r {
         margin-left: auto;
         display: flex;
         align-items: center;
-        gap: 10px;
+        gap: 8px;
       }
-      .count {
-        font-size: 11px;
-        color: var(--tx3);
-        font-family: var(--mono);
-        white-space: nowrap;
-      }
-      .pal-btn {
-        display: flex;
+      .tb-btn {
+        display: inline-flex;
         align-items: center;
-        gap: 4px;
-        padding: 3px 8px;
-        background: var(--s3);
-        border: 1px solid var(--bd2);
-        border-radius: 5px;
-        color: var(--tx3);
-        font-family: var(--mono);
-        font-size: 10.5px;
+        gap: 5px;
+        padding: 5px 10px;
+        background: var(--s2);
+        border: 1px solid var(--bd);
+        border-radius: 6px;
+        color: var(--tx2);
         cursor: pointer;
         white-space: nowrap;
-        transition:
-          border-color 0.1s,
-          color 0.1s;
       }
-      .pal-btn:hover {
+      .tb-btn:hover {
         border-color: var(--bd2);
-        color: var(--tx2);
+        color: var(--tx);
       }
-      .theme-btn {
-        min-width: 46px;
-        justify-content: center;
-      }
-      .del-btn {
+      .tb-btn.danger {
         color: var(--red);
-        border-color: var(--red);
-        padding: 3px 6px;
       }
-      .del-btn:hover {
-        color: var(--red);
+      .tb-btn.danger:hover {
         border-color: var(--red);
         background: var(--red-bg);
       }
-      .del-btn svg {
+      .tb-btn svg {
         display: block;
       }
       .del-spin {
@@ -462,59 +324,382 @@
         }
       }
 
-      /* ── workspace ────────────────────────────────────────────── */
+      /* ── workspace ───────────────────────────────────────────── */
       #workspace {
         flex: 1;
         display: flex;
         overflow: hidden;
+        position: relative;
+      }
+      .gutter {
+        flex: 0 0 6px;
+        cursor: col-resize;
+        background: var(--bd);
+        transition: background 0.1s;
+        touch-action: none;
+      }
+      .gutter:hover,
+      .gutter.active {
+        background: var(--ac);
       }
 
-      /* ── list pane ────────────────────────────────────────────── */
+      /* ── filter pane ─────────────────────────────────────────── */
+      #filter-pane {
+        flex: 0 0 var(--filter-w);
+        width: var(--filter-w);
+        overflow-y: auto;
+        overflow-x: hidden;
+        background: var(--s1);
+        padding: 12px 14px 32px;
+      }
+      #filter-pane::-webkit-scrollbar {
+        width: 5px;
+      }
+      #filter-pane::-webkit-scrollbar-thumb {
+        background: var(--bd2);
+        border-radius: 3px;
+      }
+      .fp-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+      }
+      .fp-head h2 {
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .link-btn {
+        background: none;
+        border: none;
+        color: var(--ac);
+        cursor: pointer;
+        font-size: 12px;
+        padding: 2px 4px;
+      }
+      .link-btn:hover {
+        text-decoration: underline;
+      }
+      .fp-head .link-btn.muted {
+        color: var(--tx3);
+      }
+      details.fg {
+        border-top: 1px solid var(--bd);
+        padding: 8px 0 10px;
+      }
+      details.fg summary {
+        cursor: pointer;
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--tx);
+        padding: 4px 0;
+        user-select: none;
+      }
+      details.fg summary::-webkit-details-marker {
+        display: none;
+      }
+      details.fg summary::before {
+        content: "";
+        width: 5px;
+        height: 5px;
+        border-right: 1.5px solid var(--tx3);
+        border-bottom: 1.5px solid var(--tx3);
+        transform: rotate(-45deg);
+        transition: transform 0.12s;
+        margin-right: 2px;
+      }
+      details.fg[open] summary::before {
+        transform: rotate(45deg);
+      }
+      details.fg summary .fg-active {
+        margin-left: auto;
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--ac);
+      }
+      .fg-body {
+        padding: 6px 0 0 13px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .fg-sub {
+        font-size: 12px;
+        color: var(--tx2);
+        margin: 6px 0 2px;
+      }
+      .opt {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        color: var(--tx2);
+        cursor: pointer;
+        padding: 3px 0;
+      }
+      .opt:hover {
+        color: var(--tx);
+      }
+      .opt input[type="checkbox"] {
+        width: 14px;
+        height: 14px;
+        accent-color: var(--ac);
+        margin: 0;
+        cursor: pointer;
+      }
+      .opt.on {
+        color: var(--tx);
+      }
+      .opt .n {
+        margin-left: auto;
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--tx3);
+      }
+      .seg {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+      .seg button {
+        min-width: 30px;
+        padding: 4px 8px;
+        border: 1px solid var(--bd);
+        border-radius: 5px;
+        background: var(--s2);
+        color: var(--tx2);
+        cursor: pointer;
+        font-size: 12px;
+      }
+      .seg button:hover {
+        border-color: var(--bd2);
+        color: var(--tx);
+      }
+      .seg button.on {
+        background: var(--ac-bg);
+        border-color: var(--ac);
+        color: var(--ac);
+      }
+      .num-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        color: var(--tx2);
+        padding: 3px 0;
+      }
+      .num-row input,
+      .num-row select {
+        width: 74px;
+        padding: 4px 7px;
+        background: var(--s2);
+        border: 1px solid var(--bd);
+        border-radius: 5px;
+        font-family: var(--mono);
+        font-size: 12px;
+        appearance: textfield;
+        -moz-appearance: textfield;
+      }
+      .num-row input::-webkit-outer-spin-button,
+      .num-row input::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+      .num-row select {
+        width: auto;
+        font-family: var(--sans);
+        appearance: auto;
+      }
+      .num-row input:focus,
+      .num-row select:focus {
+        outline: none;
+        border-color: var(--ac);
+      }
+
+      /* ── list pane ───────────────────────────────────────────── */
       #list-pane {
         flex: 1;
         min-width: 0;
         display: flex;
         flex-direction: column;
         overflow: hidden;
-        border-right: 1px solid var(--bd);
+      }
+      .toolbar {
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 14px;
+        border-bottom: 1px solid var(--bd);
+        background: var(--s1);
+      }
+      .srch-wrap {
+        position: relative;
+        flex: 1;
+        max-width: 480px;
+        display: flex;
+        align-items: center;
+      }
+      .srch-wrap .srch-icon {
+        position: absolute;
+        left: 10px;
+        color: var(--tx3);
+        font-size: 13px;
+        pointer-events: none;
+        font-style: normal;
+      }
+      #search {
+        width: 100%;
+        padding: 7px 10px 7px 30px;
+        background: var(--s2);
+        border: 1px solid var(--bd);
+        border-radius: 6px 0 0 6px;
+        font-size: 13px;
+      }
+      #search::placeholder {
+        color: var(--tx3);
+      }
+      #search:focus {
+        outline: none;
+        border-color: var(--ac);
+      }
+      .mode-seg {
+        display: flex;
+        flex-shrink: 0;
+      }
+      .mode-seg button {
+        padding: 7px 10px;
+        border: 1px solid var(--bd);
+        border-left: none;
+        background: var(--s2);
+        color: var(--tx3);
+        cursor: pointer;
+        font-size: 12px;
+      }
+      .mode-seg button:last-child {
+        border-radius: 0 6px 6px 0;
+      }
+      .mode-seg button.on {
+        background: var(--ac-bg);
+        color: var(--ac);
+        border-color: var(--ac);
+      }
+      .pill {
+        font-size: 12px;
+        color: var(--tx2);
+        background: var(--s2);
+        border: 1px solid var(--bd);
+        border-radius: 999px;
+        padding: 3px 10px;
+        white-space: nowrap;
+      }
+      .pill.ac {
+        color: var(--ac);
+        border-color: var(--ac);
+      }
+      .srch-icon.spin {
+        color: var(--ac);
+        animation: spin 0.9s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .active-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 14px;
+        border-bottom: 1px solid var(--bd);
+        background: var(--s1);
+        font-size: 12px;
+        color: var(--tx3);
+      }
+      .achip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 4px 3px 9px;
+        border: 1px solid var(--ac);
+        border-radius: 999px;
+        background: var(--ac-bg);
+        color: var(--ac);
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .achip b {
+        font-weight: 500;
+        color: var(--tx2);
+      }
+      .achip .x {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+      }
+      .achip:hover .x {
+        background: var(--ac);
+        color: #fff;
+      }
+      .fp-hint {
+        font-size: 12px;
+        color: var(--tx3);
+        line-height: 1.4;
+        margin-bottom: 8px;
+      }
+      details.fg.active summary {
+        color: var(--ac);
+      }
+      .count {
+        margin-left: auto;
+        font-size: 12px;
+        color: var(--tx3);
+        font-family: var(--mono);
+        white-space: nowrap;
       }
       #tbl-scroll {
         flex: 1;
         overflow: auto;
       }
       #tbl-scroll::-webkit-scrollbar {
-        width: 5px;
-        height: 5px;
-      }
-      #tbl-scroll::-webkit-scrollbar-track {
-        background: transparent;
+        width: 6px;
+        height: 6px;
       }
       #tbl-scroll::-webkit-scrollbar-thumb {
         background: var(--bd2);
         border-radius: 3px;
       }
-
       table {
         width: 100%;
+        min-width: 1080px; /* title keeps room; #tbl-scroll scrolls sideways when narrower */
         border-collapse: collapse;
+        table-layout: fixed;
       }
-
       thead th {
         position: sticky;
         top: 0;
         z-index: 10;
         background: var(--s1);
         border-bottom: 1px solid var(--bd);
-        padding: 6px 9px;
+        padding: 8px 10px;
         text-align: left;
         white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
         cursor: pointer;
         user-select: none;
-        font-size: 10.5px;
+        font-size: 12px;
         font-weight: 600;
         color: var(--tx3);
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
       }
       thead th:hover {
         color: var(--tx2);
@@ -522,7 +707,10 @@
       thead th.sk {
         color: var(--ac);
       }
-
+      thead th.c,
+      td.c {
+        text-align: center;
+      }
       .sa {
         margin-left: 2px;
         opacity: 0.35;
@@ -532,11 +720,9 @@
       .sa.on {
         opacity: 1;
       }
-
       tbody tr {
         border-bottom: 1px solid var(--bd);
         cursor: pointer;
-        transition: background 0.04s;
       }
       tbody tr:hover {
         background: var(--s2);
@@ -547,36 +733,36 @@
       tbody tr.sel .tc {
         color: var(--ac);
       }
-
       td {
-        padding: 5px 9px;
+        padding: 8px 10px;
         vertical-align: middle;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
-
       .tc {
-        font-size: 12.5px;
+        font-size: 13.5px;
         font-weight: 500;
-        color: var(--tx);
-        max-width: 220px;
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
       .oc {
+        display: block;
         font-size: 12px;
         color: var(--tx2);
-        max-width: 140px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin-top: 1px;
       }
       .lc {
-        font-size: 11.5px;
-        color: var(--tx3);
-        max-width: 110px;
+        font-size: 12.5px;
+        color: var(--tx2);
       }
       .dc {
         font-family: var(--mono);
-        font-size: 11px;
+        font-size: 12px;
         color: var(--tx3);
-        white-space: nowrap;
       }
       .dc.urg {
         color: var(--amber);
@@ -584,218 +770,25 @@
       .sc {
         text-align: center;
         font-family: var(--mono);
-        font-size: 11px;
-        font-weight: 500;
-        padding: 4px 5px;
-        min-width: 40px;
-      }
-      .nc {
-        text-align: center;
-        font-family: var(--mono);
-        font-size: 11px;
-        color: var(--tx3);
-        min-width: 28px;
-      }
-      .ic {
-        font-family: var(--mono);
-        font-size: 10.5px;
-        color: var(--tx3);
-        cursor: pointer;
-        white-space: nowrap;
-        transition: color 0.1s;
-      }
-      .ic:hover {
-        color: var(--tx2);
-      }
-
-      .empty-list {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        height: 120px;
-        color: var(--tx3);
         font-size: 12px;
-      }
-      .notice {
-        margin: 10px 12px;
-        padding: 9px 11px;
-        border: 1px solid var(--bd2);
-        border-radius: 7px;
-        background: var(--s2);
-        color: var(--tx2);
-        font-size: 12px;
-        line-height: 1.45;
-      }
-      .notice.warn {
-        border-color: rgba(245, 158, 11, 0.28);
-        color: #fbbf24;
-      }
-      .notice.err {
-        border-color: rgba(239, 68, 68, 0.32);
-        color: #fca5a5;
-      }
-
-      /* loading spinner text */
-      .loading {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        height: 200px;
-        color: var(--tx3);
-        font-size: 12px;
-        gap: 8px;
-      }
-
-      /* ── detail pane ──────────────────────────────────────────── */
-      #detail-pane {
-        width: 400px;
-        flex-shrink: 0;
-        overflow-y: auto;
-        overflow-x: hidden;
-        background: var(--s1);
-      }
-      #detail-pane::-webkit-scrollbar {
-        width: 5px;
-      }
-      #detail-pane::-webkit-scrollbar-track {
-        background: transparent;
-      }
-      #detail-pane::-webkit-scrollbar-thumb {
-        background: var(--bd2);
-        border-radius: 3px;
-      }
-
-      .dp-empty {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        height: 100%;
-        gap: 8px;
-        color: var(--tx3);
-        font-size: 12px;
-      }
-      .dp-empty .hint {
-        font-size: 11px;
-      }
-      .dp-empty kbd {
-        font-family: var(--mono);
-        font-size: 10px;
-        background: var(--s3);
-        border: 1px solid var(--bd2);
-        border-radius: 3px;
-        padding: 1px 5px;
-      }
-
-      .dp {
-        padding: 18px 18px 28px;
-      }
-
-      .dp-title {
-        font-size: 15px;
-        font-weight: 600;
-        color: var(--tx);
-        line-height: 1.35;
-        margin-bottom: 7px;
-      }
-      .dp-meta {
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        color: var(--tx3);
-        font-size: 11.5px;
-        flex-wrap: wrap;
-        margin-bottom: 16px;
-      }
-      .dp-meta .co {
-        color: var(--tx2);
         font-weight: 500;
       }
-      .dp-meta .dln {
-        font-family: var(--mono);
-      }
-      .dp-meta .dln.urg {
-        color: var(--amber);
-      }
-      .dp-meta .pay-inline {
-        font-family: var(--mono);
-        font-size: 11px;
+      .term-yes {
         color: var(--green);
-      }
-      .dp-sep {
-        opacity: 0.3;
-      }
-
-      .dp-divider {
-        height: 1px;
-        background: var(--bd);
-        margin: 14px 0;
-      }
-
-      /* score grid */
-      .sg {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 5px;
-        margin-bottom: 14px;
-      }
-      .sb {
-        background: var(--s2);
-        border: 1px solid var(--bd);
-        border-radius: 6px;
-        padding: 7px 8px;
-        text-align: center;
-      }
-      .sb-label {
-        font-size: 9px;
         font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
+      }
+      .term-no {
         color: var(--tx3);
-        margin-bottom: 3px;
       }
-      .sb-val {
-        font-family: var(--mono);
-        font-size: 13px;
-        font-weight: 500;
-      }
-      .status-set {
-        display: flex;
-        gap: 5px;
-        margin-bottom: 14px;
-      }
-      .status-btn {
-        flex: 1;
-        padding: 6px 7px;
-        border: 1px solid var(--bd);
-        border-radius: 6px;
-        background: var(--s2);
+      .term-na {
         color: var(--tx3);
-        font-family: var(--sans);
-        font-size: 11px;
-        font-weight: 600;
-        cursor: pointer;
-        transition:
-          border-color 0.1s,
-          color 0.1s,
-          background 0.1s;
-      }
-      .status-btn:hover {
-        border-color: var(--bd2);
-        color: var(--tx2);
-      }
-      .status-btn.on {
-        background: var(--ac-bg);
-        border-color: var(--ac);
-        color: var(--ac);
+        opacity: 0.5;
       }
       .st {
         text-align: center;
-        font-size: 10.5px;
-        font-weight: 700;
+        font-size: 11.5px;
+        font-weight: 600;
         color: var(--tx3);
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
       }
       .st-maybe {
         color: var(--amber);
@@ -807,52 +800,221 @@
         color: var(--tx3);
         opacity: 0.6;
       }
-
-      /* apply row */
-      .apply-row {
+      .empty-list {
         display: flex;
-        flex-wrap: wrap;
         align-items: center;
-        gap: 8px;
-        padding: 9px 11px;
-        background: var(--s2);
-        border: 1px solid var(--bd);
-        border-radius: 7px;
-        margin-bottom: 12px;
+        justify-content: center;
+        height: 140px;
+        color: var(--tx3);
+        font-size: 13px;
+        text-align: center;
+        padding: 0 20px;
       }
-      .apply-lbl {
-        font-size: 10px;
+      .notice {
+        margin: 10px 12px;
+        padding: 9px 11px;
+        border: 1px solid var(--bd2);
+        border-radius: 7px;
+        background: var(--s2);
+        color: var(--tx2);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+      .notice.warn {
+        border-color: rgba(245, 158, 11, 0.28);
+        color: #fbbf24;
+      }
+      .notice.err {
+        border-color: rgba(239, 68, 68, 0.32);
+        color: #fca5a5;
+      }
+      .loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 200px;
+        color: var(--tx3);
+      }
+
+      /* ── drawer ──────────────────────────────────────────────── */
+      #drawer {
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: var(--drawer-w);
+        max-width: 100%;
+        display: flex;
+        background: var(--s1);
+        border-left: 1px solid var(--bd2);
+        box-shadow: -18px 0 40px rgba(0, 0, 0, 0.45);
+        z-index: 50;
+        transition: transform 0.16s ease-out;
+      }
+      #drawer .gutter {
+        flex: 0 0 6px;
+        background: var(--bd2);
+      }
+      #drawer .gutter:hover,
+      #drawer .gutter.active {
+        background: var(--ac);
+      }
+      .dp {
+        flex: 1;
+        min-width: 0;
+        overflow-y: auto;
+        padding: 0 22px 32px;
+      }
+      .dp::-webkit-scrollbar {
+        width: 6px;
+      }
+      .dp::-webkit-scrollbar-thumb {
+        background: var(--bd2);
+        border-radius: 3px;
+      }
+      .dp-head {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        background: var(--s1);
+        padding: 18px 0 12px;
+        border-bottom: 1px solid var(--bd);
+        margin-bottom: 16px;
+      }
+      .dp-title-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+      }
+      .dp-title {
+        font-size: 18px;
         font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
+        line-height: 1.3;
+        flex: 1;
+      }
+      .dp-org {
+        font-size: 14px;
+        color: var(--tx2);
+        margin-top: 3px;
+      }
+      .close-btn {
+        flex-shrink: 0;
+        width: 28px;
+        height: 28px;
+        border: 1px solid var(--bd);
+        border-radius: 6px;
+        background: var(--s2);
+        color: var(--tx2);
+        cursor: pointer;
+        font-size: 15px;
+        line-height: 1;
+      }
+      .close-btn:hover {
+        border-color: var(--bd2);
+        color: var(--tx);
+      }
+      .status-set {
+        display: flex;
+        gap: 6px;
+        margin-top: 12px;
+      }
+      .status-btn {
+        flex: 1;
+        padding: 7px 8px;
+        border: 1px solid var(--bd);
+        border-radius: 6px;
+        background: var(--s2);
+        color: var(--tx3);
+        font-size: 12.5px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .status-btn:hover {
+        border-color: var(--bd2);
+        color: var(--tx2);
+      }
+      .status-btn.on {
+        background: var(--ac-bg);
+        border-color: var(--ac);
+        color: var(--ac);
+      }
+      .facts {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px 18px;
+        margin-bottom: 18px;
+      }
+      .fact {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        font-size: 13px;
+        padding: 5px 0;
+        border-bottom: 1px dashed var(--bd);
+        min-width: 0;
+      }
+      .fact .k {
         color: var(--tx3);
         flex-shrink: 0;
       }
-      .apply-val {
-        font-size: 11.5px;
-        color: var(--ac);
+      .fact .v {
+        color: var(--tx);
+        text-align: right;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+      }
+      .fact .v.urg {
+        color: var(--amber);
+      }
+      .fact .v.good {
+        color: var(--green);
+      }
+      .block {
+        margin-bottom: 18px;
+      }
+      .block h3 {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--tx2);
+        margin-bottom: 8px;
+      }
+      .apply-box {
+        background: var(--s2);
+        border: 1px solid var(--bd);
+        border-radius: 8px;
+        padding: 10px 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .apply-line {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+      .apply-line a {
+        color: var(--ac);
         text-decoration: none;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 13px;
         flex: 1;
       }
-      .apply-val:hover {
+      .apply-line a:hover {
         text-decoration: underline;
       }
       .cp-btn {
         flex-shrink: 0;
-        padding: 3px 7px;
+        padding: 3px 8px;
         border: 1px solid var(--bd2);
         border-radius: 4px;
         background: var(--s3);
         color: var(--tx3);
-        font-size: 10px;
+        font-size: 11px;
         cursor: pointer;
-        font-family: var(--sans);
-        transition:
-          border-color 0.1s,
-          color 0.1s;
       }
       .cp-btn:hover {
         border-color: var(--ac);
@@ -862,70 +1024,33 @@
         color: var(--green);
         border-color: rgba(34, 197, 94, 0.3);
       }
-
-      .id-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin-bottom: 14px;
-      }
-      .id-lbl {
-        font-size: 10px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        color: var(--tx3);
-      }
-      .id-val {
-        font-family: var(--mono);
-        font-size: 11px;
-        color: var(--tx2);
-      }
-
-      /* keyword chips */
-      .sec {
-        margin-bottom: 15px;
-      }
-      .sec-lbl {
-        font-size: 10px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        color: var(--tx3);
-        margin-bottom: 7px;
-      }
-      .kw-chips {
+      .chips-wrap {
         display: flex;
         flex-wrap: wrap;
-        gap: 4px;
+        gap: 5px;
       }
       .kw {
         display: inline-flex;
         align-items: center;
-        gap: 4px;
-        padding: 2px 7px;
+        gap: 5px;
+        padding: 3px 8px;
         border-radius: 4px;
         font-family: var(--mono);
-        font-size: 11px;
+        font-size: 11.5px;
         font-weight: 600;
-        border: 1px solid transparent;
+        border: 1px solid var(--bd2);
+        color: var(--tx2);
+        background: var(--s2);
       }
       .kw-r {
-        font-size: 8.5px;
+        font-size: 9px;
         font-weight: 800;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
         opacity: 0.9;
       }
       .kw-fw {
         background: rgba(59, 130, 246, 0.1);
         color: #60a5fa;
         border-color: rgba(59, 130, 246, 0.18);
-      }
-      .kw-em {
-        background: rgba(168, 85, 247, 0.1);
-        color: #c084fc;
-        border-color: rgba(168, 85, 247, 0.18);
       }
       .kw-hw {
         background: rgba(34, 197, 94, 0.1);
@@ -942,32 +1067,136 @@
         color: #fbbf24;
         border-color: rgba(245, 158, 11, 0.18);
       }
-      .kw-mts {
-        background: rgba(239, 68, 68, 0.1);
-        color: #f87171;
-        border-color: rgba(239, 68, 68, 0.18);
+      .scores {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 18px;
       }
-      .kw-pwr {
-        background: rgba(251, 146, 60, 0.1);
-        color: #fb923c;
-        border-color: rgba(251, 146, 60, 0.18);
+      .sb {
+        flex: 1;
+        background: var(--s2);
+        border: 1px solid var(--bd);
+        border-radius: 6px;
+        padding: 7px 6px;
+        text-align: center;
       }
-
-      /* text sections */
-      .sec-txt {
-        font-size: 12px;
-        line-height: 1.65;
+      .sb-label {
+        font-size: 11px;
+        color: var(--tx3);
+        margin-bottom: 3px;
+      }
+      .sb-val {
+        font-family: var(--mono);
+        font-size: 13px;
+        font-weight: 500;
+      }
+      details.sec {
+        margin-bottom: 14px;
+      }
+      details.sec summary {
+        cursor: pointer;
+        list-style: none;
+        font-size: 13px;
+        font-weight: 600;
         color: var(--tx2);
-        white-space: pre-wrap;
-        max-height: 180px;
-        overflow-y: auto;
+        padding: 4px 0;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        user-select: none;
       }
-      .sec-txt::-webkit-scrollbar {
-        width: 3px;
+      details.sec summary::-webkit-details-marker {
+        display: none;
       }
-      .sec-txt::-webkit-scrollbar-thumb {
+      details.sec summary::before {
+        content: "";
+        width: 5px;
+        height: 5px;
+        border-right: 1.5px solid var(--tx3);
+        border-bottom: 1.5px solid var(--tx3);
+        transform: rotate(-45deg);
+        transition: transform 0.12s;
+      }
+      details.sec[open] summary::before {
+        transform: rotate(45deg);
+      }
+      .sec-txt {
+        font-size: 13.5px;
+        line-height: 1.6;
+        color: var(--tx2);
+        padding: 4px 0 4px 11px;
+        max-width: 72ch;
+      }
+      .sec-txt p {
+        margin: 0 0 9px;
+      }
+      .sec-txt p.lead {
+        color: var(--tx);
+        font-weight: 500;
+        margin-bottom: 4px;
+      }
+      .sec-txt ul {
+        padding-left: 1.25em;
+        margin: 2px 0 9px;
+      }
+      .sec-txt ul ul {
+        margin: 2px 0 2px;
+      }
+      .sec-txt li {
+        margin: 3px 0;
+      }
+      .hh {
+        font-size: 13px;
+        color: var(--tx2);
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        gap: 6px 14px;
+        align-items: baseline;
+      }
+      .hh .k {
+        color: var(--tx3);
+      }
+      .bars {
+        display: flex;
+        gap: 4px;
+        align-items: flex-end;
+      }
+      .bar {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 3px;
+        font-family: var(--mono);
+        font-size: 10.5px;
+        color: var(--tx3);
+        width: 40px;
+      }
+      .bar i {
+        display: block;
+        width: 100%;
         background: var(--bd2);
-        border-radius: 2px;
+        border-radius: 2px 2px 0 0;
+        min-height: 2px;
+      }
+      .bar.mine i {
+        background: var(--ac);
+      }
+      .bar.mine {
+        color: var(--ac);
+      }
+      .foot {
+        font-size: 12px;
+        color: var(--tx3);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border-top: 1px solid var(--bd);
+        padding-top: 12px;
+        margin-top: 8px;
+      }
+      .foot .id {
+        font-family: var(--mono);
+        color: var(--tx2);
       }
     </style>
   </head>
@@ -975,8 +1204,14 @@
   <body
     x-data="app()"
     x-init="init()"
+    x-ref="body"
     :class="{light: theme === 'day'}"
+    :style="'--filter-w:' + (filterOpen ? filterW : 0) + 'px;--drawer-w:' + drawerW + 'px'"
     @keydown.window="onKey($event)"
+    @resize.window="clampPanes()"
+    @pointermove.window="dragMove($event)"
+    @pointerup.window="dragEnd($event)"
+    @pointercancel.window="dragEnd($event)"
   >
     <!-- ── command palette ────────────────────────────────────────── -->
     <div id="pal-overlay" x-show="pal" x-cloak @click.self="pal=false">
@@ -997,9 +1232,7 @@
             </div>
           </template>
           <template x-if="!palItems.length">
-            <div style="padding: 14px 16px; color: var(--tx3); font-size: 12px">
-              No commands match
-            </div>
+            <div style="padding: 14px 16px; color: var(--tx3)">No commands match</div>
           </template>
         </div>
         <div class="pal-footer">
@@ -1021,610 +1254,371 @@
           <span x-text="boards.find(b=>b.id===board).label"></span>
           <span class="bd-arrow">▾</span>
         </div>
-        <div
-          class="board-menu"
-          x-show="boardOpen"
-          x-cloak
-          @click="boardOpen=false"
-        >
+        <div class="board-menu" x-show="boardOpen" x-cloak @click="boardOpen=false">
           <template x-for="b in boards" :key="b.id">
-            <div
-              class="board-opt"
-              :class="{active: board===b.id}"
-              @click="setBoard(b.id)"
-            >
+            <div class="board-opt" :class="{active: board===b.id}" @click="setBoard(b.id)">
               <span class="check" x-text="board===b.id ? '✓' : ''"></span>
               <span x-text="b.label"></span>
             </div>
           </template>
         </div>
       </div>
+      <button class="tb-btn" x-show="!filterOpen" x-cloak @click="toggleFilters()">Show filters</button>
 
-      <div class="srch-wrap">
-        <i class="srch-icon">⌕</i>
-        <input
-          type="search"
-          id="search"
-          x-ref="srch"
-          x-model="search"
-          @input="applyFilters()"
-          placeholder="Search title, keywords, etc..."
-          autocomplete="off"
-          spellcheck="false"
-        />
-      </div>
-
-      <div class="vdiv"></div>
-
-      <div class="chips">
-        <template x-for="r in roleList" :key="r">
-          <label class="chip" :class="{on: roles[r]}">
-            <input
-              type="checkbox"
-              x-model="roles[r]"
-              @change="applyFilters()"
-            />
-            <span x-text="rLabel(r)"></span>
-          </label>
-        </template>
-      </div>
-
-      <div class="vdiv"></div>
-
-      <div class="chips" style="align-items: center">
-        <span style="font-size: 11px; color: var(--tx3); white-space: nowrap"
-          >Apply by</span
-        >
-        <label class="chip" :class="{on: fEmail}">
-          <input
-            type="checkbox"
-            x-model="fEmail"
-            @change="applyFilters()"
-          />Email
-        </label>
-        <label class="chip" :class="{on: fLink}">
-          <input type="checkbox" x-model="fLink" @change="applyFilters()" />Link
-        </label>
-        <label class="chip" :class="{on: fWw}">
-          <input type="checkbox" x-model="fWw" @change="applyFilters()" />WW
-        </label>
+      <div class="topbar-r">
         <button
-          class="pal-btn del-btn"
+          class="tb-btn danger"
           @click="deleteExpired()"
           :disabled="deletingExpired"
           :title="deletingExpired ? 'Deleting…' : 'Delete all postings whose deadline has passed'"
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            :class="{ 'del-spin': deletingExpired }"
-          >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" :class="{'del-spin': deletingExpired}">
             <polyline points="3 6 5 6 21 6"></polyline>
-            <path
-              d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"
-            ></path>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
             <line x1="10" y1="11" x2="10" y2="17"></line>
             <line x1="14" y1="11" x2="14" y2="17"></line>
           </svg>
+          <span>Delete expired</span>
         </button>
-      </div>
-
-      <div class="vdiv"></div>
-
-      <div class="chips">
-        <template x-for="d in Object.keys(fDur)" :key="d">
-          <label class="chip" :class="{on: fDur[d]}">
-            <input type="checkbox" x-model="fDur[d]" @change="applyFilters()" />
-            <span x-text="d + ' mo'"></span>
-          </label>
-        </template>
-      </div>
-
-      <div class="vdiv"></div>
-
-      <div class="chips">
-        <template x-for="a in Object.keys(fArr)" :key="a">
-          <label class="chip" :class="{on: fArr[a]}">
-            <input type="checkbox" x-model="fArr[a]" @change="applyFilters()" />
-            <span x-text="a"></span>
-          </label>
-        </template>
-      </div>
-
-      <div class="vdiv"></div>
-
-      <div class="chips">
-        <template x-for="l in Object.keys(fLvl)" :key="l">
-          <label class="chip" :class="{on: fLvl[l]}" :title="l">
-            <input type="checkbox" x-model="fLvl[l]" @change="applyFilters()" />
-            <span x-text="lvlLabel(l)"></span>
-          </label>
-        </template>
-      </div>
-
-      <div class="vdiv"></div>
-
-      <div class="chips">
-        <span class="chip-lbl">My term</span>
-        <input
-          type="number"
-          id="my-term"
-          min="1"
-          max="8"
-          :value="myTerm"
-          @change="setMyTerm($event.target.value)"
-          title="Your upcoming work term number"
-        />
-        <label
-          class="chip"
-          :class="{on: fMyTerm}"
-          title="Hide employers whose hiring history shows no past hires at your work term number (employers with no history stay)"
-        >
-          <input type="checkbox" x-model="fMyTerm" @change="applyFilters()" />Hires my term
-        </label>
-      </div>
-
-      <div class="topbar-r">
-        <span class="count" x-text="jobCountLabel"></span>
-        <button class="pal-btn" @click="_openPal()" title="Command palette">
-          Ctrl+K
-        </button>
+        <button class="tb-btn" @click="_openPal()" title="Command palette"><kbd>Ctrl</kbd><kbd>K</kbd></button>
         <button
-          class="pal-btn theme-btn"
+          class="tb-btn"
           @click="toggleTheme()"
-          :title="theme === 'day' ? 'Switch to night mode' : 'Switch to day mode'"
           x-text="theme === 'day' ? 'Night' : 'Day'"
         ></button>
       </div>
     </div>
 
     <!-- ── workspace ──────────────────────────────────────────────── -->
-    <div id="workspace">
+    <div id="workspace" x-ref="ws">
+      <!-- filter pane -->
+      <aside id="filter-pane" x-show="filterOpen">
+        <div class="fp-head">
+          <h2>Filters</h2>
+          <span>
+            <button class="link-btn" @click="clearFilters()">Clear all</button>
+            <button class="link-btn muted" @click="toggleFilters()" title="Hide filters">Hide</button>
+          </span>
+        </div>
+        <p class="fp-hint">Check options to narrow the list. Nothing checked in a group means it isn't filtering.</p>
+
+        <details class="fg" open>
+          <summary><span>My work term</span><span class="fg-active" x-text="'term ' + myTerm"></span></summary>
+          <div class="fg-body">
+            <div class="fg-sub">Which work term are you applying for?</div>
+            <div class="seg">
+              <template x-for="n in [1,2,3,4,5,6,7,8]" :key="n">
+                <button :class="{on: myTerm===n}" @click="setMyTerm(n)" x-text="n"></button>
+              </template>
+            </div>
+          </div>
+        </details>
+
+        <template x-for="g in groupList" :key="g.key">
+          <details class="fg" :class="{active: groupActive(g.key)}" :open="!g.closed">
+            <summary>
+              <span x-text="g.label"></span>
+              <span class="fg-active" x-text="groupBadge(g.key)"></span>
+            </summary>
+            <div class="fg-body">
+              <template x-if="g.key === 'status'">
+                <label class="opt" :class="{on: fHideIgnored}" style="margin-bottom: 4px">
+                  <input type="checkbox" x-model="fHideIgnored" @change="applyFilters()" />
+                  <span>Hide ignored postings</span>
+                </label>
+              </template>
+              <template x-if="g.key === 'status'">
+                <div class="fg-sub">Only show</div>
+              </template>
+              <template x-for="o in g.opts" :key="o.v">
+                <label class="opt" :class="{on: g.sel[o.v]}">
+                  <input type="checkbox" x-model="g.sel[o.v]" @change="applyFilters()" />
+                  <span x-text="o.l"></span>
+                  <span class="n" x-text="counts[g.key]?.[o.v] ?? 0"></span>
+                </label>
+              </template>
+            </div>
+          </details>
+        </template>
+
+        <details class="fg" open>
+          <summary><span>Pay</span><span class="fg-active" x-text="fMinPay ? '≥ $'+fMinPay : ''"></span></summary>
+          <div class="fg-body">
+            <label class="num-row">Min $/hr
+              <input type="number" inputmode="decimal" min="0" step="1" placeholder="any" x-model.number="fMinPay" @input="applyFilters()" />
+            </label>
+            <label class="opt" :class="{on: fPayUnlisted}">
+              <input type="checkbox" x-model="fPayUnlisted" @change="applyFilters()" />
+              <span>Include jobs without a listed pay</span>
+            </label>
+          </div>
+        </details>
+
+        <details class="fg" open>
+          <summary><span>Employer</span><span class="fg-active" x-text="fHasHistory ? 'history' : ''"></span></summary>
+          <div class="fg-body">
+            <label class="opt" :class="{on: fHasHistory}">
+              <input type="checkbox" x-model="fHasHistory" @change="applyFilters()" />
+              <span>Has hired from Waterloo before</span>
+              <span class="n" x-text="counts.history ?? 0"></span>
+            </label>
+          </div>
+        </details>
+
+        <details class="fg" open>
+          <summary><span>Requirements</span><span class="fg-active" x-text="fCover === 'any' ? '' : (fCover === 'yes' ? 'cover letter' : 'no cover letter')"></span></summary>
+          <div class="fg-body">
+            <div class="fg-sub">Cover letter</div>
+            <div class="seg">
+              <button :class="{on: fCover==='any'}" @click="fCover='any'; applyFilters()">Any</button>
+              <button :class="{on: fCover==='no'}" @click="fCover='no'; applyFilters()">Not required</button>
+              <button :class="{on: fCover==='yes'}" @click="fCover='yes'; applyFilters()">Required</button>
+            </div>
+          </div>
+        </details>
+
+        <details class="fg" open>
+          <summary><span>Competition</span><span class="fg-active" x-text="[fMaxApps != null && fMaxApps !== '' ? '≤ '+fMaxApps+' apps' : '', fMinOpen ? '≥ '+fMinOpen+' open' : ''].filter(Boolean).join(' · ')"></span></summary>
+          <div class="fg-body">
+            <label class="num-row" x-show="board === 'full_cycle'">Max applicants
+              <input type="number" inputmode="numeric" min="0" step="1" placeholder="any" x-model.number="fMaxApps" @input="applyFilters()" />
+            </label>
+            <label class="num-row">Min openings
+              <input type="number" inputmode="numeric" min="1" step="1" placeholder="any" x-model.number="fMinOpen" @input="applyFilters()" />
+            </label>
+          </div>
+        </details>
+
+        <details class="fg" open>
+          <summary><span>Deadline</span><span class="fg-active" x-text="fDueDays ? 'within '+fDueDays+'d' : ''"></span></summary>
+          <div class="fg-body">
+            <label class="num-row">Due within
+              <select x-model.number="fDueDays" @change="applyFilters()">
+                <option :value="0">any time</option>
+                <option :value="1">1 day</option>
+                <option :value="3">3 days</option>
+                <option :value="7">7 days</option>
+                <option :value="14">14 days</option>
+              </select>
+            </label>
+            <label class="opt" :class="{on: fHideExpired}">
+              <input type="checkbox" x-model="fHideExpired" @change="applyFilters()" />
+              <span>Hide expired</span>
+            </label>
+          </div>
+        </details>
+      </aside>
+      <div
+        class="gutter"
+        x-show="filterOpen"
+        :class="{active: drag?.side==='filter'}"
+        @pointerdown="dragStart('filter', $event)"
+        @dblclick="resetPane('filter')"
+        title="Drag to resize · double-click to reset"
+      ></div>
+
       <!-- list pane -->
       <div id="list-pane">
+        <div class="toolbar">
+          <div class="srch-wrap">
+            <i class="srch-icon" :class="{spin: semLoading}" x-text="semLoading ? '⟳' : '⌕'" :title="semLoading ? 'Loading the embedding model…' : ''"></i>
+            <input
+              type="search"
+              id="search"
+              x-ref="srch"
+              x-model="search"
+              @input="onSearchInput()"
+              :placeholder="semLoading ? 'Loading model…' : (searchMode === 'semantic' ? 'Describe the job you want…' : 'Search title, org, location, description…')"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <div class="mode-seg">
+              <button :class="{on: searchMode==='text'}" @click="setSearchMode('text')" title="Match words in the posting">Text</button>
+              <button :class="{on: searchMode==='semantic'}" @click="setSearchMode('semantic')" title="Rank by meaning using the posting embeddings">Semantic</button>
+            </div>
+          </div>
+          <span class="pill" :class="{ac: sortCol==='sem_score'}" x-text="'Sorted by ' + sortLabel()" @click="_openPal()" style="cursor:pointer" title="Change sort (Ctrl+K)"></span>
+          <span class="count" x-text="jobCountLabel"></span>
+        </div>
+        <div class="active-row" x-show="activeFilters.length" x-cloak>
+          <span>Filtering by</span>
+          <template x-for="f in activeFilters" :key="f.id">
+            <span class="achip" @click="f.remove(); applyFilters()" :title="'Remove ' + f.label">
+              <span x-text="f.label"></span>
+              <span class="x">×</span>
+            </span>
+          </template>
+          <button class="link-btn" @click="clearFilters()">Clear all</button>
+        </div>
+
         <div x-show="loading" class="loading">Loading postings…</div>
         <div x-show="apiError" x-cloak class="notice err" x-text="apiError"></div>
-        <div
-          x-show="!loading && !apiError && resumeScoresUnavailable"
-          x-cloak
-          class="notice warn"
-        >
-          Resume scores are unavailable. Add <code>resume.pdf</code> and run
-          <code>make score</code> or <code>make pipeline</code>.
+        <div x-show="!loading && !apiError && resumeScoresUnavailable" x-cloak class="notice warn">
+          Resume scores are unavailable. Add <code>resume.pdf</code> and run <code>make score</code> or <code>make pipeline</code>.
         </div>
 
         <div id="tbl-scroll" x-show="!loading && postings.length">
           <table>
+            <colgroup>
+              <col />
+              <col style="width: 130px" />
+              <col style="width: 72px" />
+              <col style="width: 88px" />
+              <template x-for="r in visibleRoles" :key="r">
+                <col style="width: 66px" />
+              </template>
+              <col style="width: 66px" />
+              <col style="width: 72px" />
+              <template x-if="board === 'full_cycle'">
+                <col style="width: 72px" />
+              </template>
+              <col style="width: 54px" />
+              <col style="width: 78px" />
+            </colgroup>
             <thead>
               <tr>
-                <th
-                  style="min-width: 200px; max-width: 240px"
-                  @click="srt('title')"
-                  :class="{sk:sortCol==='title'}"
-                >
-                  Title
-                  <i
-                    class="sa"
-                    :class="{on:sortCol==='title'}"
-                    x-text="arr('title')"
-                  ></i>
-                </th>
-                <th
-                  style="min-width: 120px; max-width: 150px"
-                  @click="srt('org')"
-                  :class="{sk:sortCol==='org'}"
-                >
-                  Org
-                  <i
-                    class="sa"
-                    :class="{on:sortCol==='org'}"
-                    x-text="arr('org')"
-                  ></i>
-                </th>
-                <th
-                  style="min-width: 90px; max-width: 120px"
-                  @click="srt('location')"
-                  :class="{sk:sortCol==='location'}"
-                >
-                  Loc
-                  <i
-                    class="sa"
-                    :class="{on:sortCol==='location'}"
-                    x-text="arr('location')"
-                  ></i>
-                </th>
-                <th
-                  style="min-width: 60px"
-                  @click="srt('deadline_iso')"
-                  :class="{sk:sortCol==='deadline_iso'}"
-                >
-                  DUE
-                  <i
-                    class="sa"
-                    :class="{on:sortCol==='deadline_iso'}"
-                    x-text="arr('deadline_iso')"
-                  ></i>
-                </th>
-                <th
-                  style="min-width: 42px"
-                  @click="srt('score_resume')"
-                  :class="{sk:sortCol==='score_resume'}"
-                  title="Resume similarity"
-                >
-                  Resume
-                  <i
-                    class="sa"
-                    :class="{on:sortCol==='score_resume'}"
-                    x-text="arr('score_resume')"
-                  ></i>
-                </th>
-                <template x-for="r in roleList" :key="r">
-                  <th
-                    style="min-width: 40px"
-                    @click="srt('score_'+r)"
-                    :class="{sk:sortCol==='score_'+r}"
-                  >
+                <th @click="srt('title')" :class="{sk:sortCol==='title'}">Title <i class="sa" :class="{on:sortCol==='title'}" x-text="arr('title')"></i></th>
+                <th @click="srt('location')" :class="{sk:sortCol==='location'}">Location <i class="sa" :class="{on:sortCol==='location'}" x-text="arr('location')"></i></th>
+                <th @click="srt('deadline_iso')" :class="{sk:sortCol==='deadline_iso'}">Due <i class="sa" :class="{on:sortCol==='deadline_iso'}" x-text="arr('deadline_iso')"></i></th>
+                <th class="c" @click="srt('score_resume')" :class="{sk:sortCol==='score_resume'}" title="Resume similarity">Resume <i class="sa" :class="{on:sortCol==='score_resume'}" x-text="arr('score_resume')"></i></th>
+                <template x-for="r in visibleRoles" :key="r">
+                  <th class="c" @click="srt('score_'+r)" :class="{sk:sortCol==='score_'+r}">
                     <span x-text="rLabel(r)"></span>
-                    <i
-                      class="sa"
-                      :class="{on:sortCol==='score_'+r}"
-                      x-text="arr('score_'+r)"
-                    ></i>
+                    <i class="sa" :class="{on:sortCol==='score_'+r}" x-text="arr('score_'+r)"></i>
                   </th>
                 </template>
-                <th
-                  style="min-width: 54px"
-                  @click="srt('comp_score')"
-                  :class="{sk:sortCol==='comp_score'}"
-                >
-                  Pay
-                  <i
-                    class="sa"
-                    :class="{on:sortCol==='comp_score'}"
-                    x-text="arr('comp_score')"
-                  ></i>
+                <th class="c" @click="srt('comp_score')" :class="{sk:sortCol==='comp_score'}">Pay <i class="sa" :class="{on:sortCol==='comp_score'}" x-text="arr('comp_score')"></i></th>
+                <th class="c" @click="srt('openings')" :class="{sk:sortCol==='openings'}" title="Number of openings">Open <i class="sa" :class="{on:sortCol==='openings'}" x-text="arr('openings')"></i></th>
+                <template x-if="board === 'full_cycle'">
+                  <th class="c" @click="srt('apps_count')" :class="{sk:sortCol==='apps_count'}" title="Applicants so far">Apps <i class="sa" :class="{on:sortCol==='apps_count'}" x-text="arr('apps_count')"></i></th>
+                </template>
+                <th class="c" @click="srt('term_rank')" :class="{sk:sortCol==='term_rank'}" :title="'Has this employer hired students in work term ' + myTerm + ' before?'">
+                  T<span x-text="myTerm"></span> <i class="sa" :class="{on:sortCol==='term_rank'}" x-text="arr('term_rank')"></i>
                 </th>
-                <th
-                  x-show="hasRatings"
-                  style="min-width: 40px; text-align: center"
-                  @click="srt('hires_total')"
-                  :class="{sk:sortCol==='hires_total'}"
-                  title="Previous Waterloo co-op hires (Work Term Ratings tab)"
-                >
-                  Hires
-                  <i
-                    class="sa"
-                    :class="{on:sortCol==='hires_total'}"
-                    x-text="arr('hires_total')"
-                  ></i>
-                </th>
-                <th
-                  x-show="hasRatings"
-                  style="min-width: 44px; text-align: center"
-                  @click="srt('term_pct')"
-                  :class="{sk:sortCol==='term_pct'}"
-                  :title="'% of past hires who were in work term ' + myTerm"
-                >
-                  T<span x-text="myTerm"></span>%
-                  <i
-                    class="sa"
-                    :class="{on:sortCol==='term_pct'}"
-                    x-text="arr('term_pct')"
-                  ></i>
-                </th>
-                <th
-                  style="min-width: 28px; text-align: center"
-                  @click="srt('openings')"
-                  :class="{sk:sortCol==='openings'}"
-                  title="Openings"
-                >
-                  #
-                  <i
-                    class="sa"
-                    :class="{on:sortCol==='openings'}"
-                    x-text="arr('openings')"
-                  ></i>
-                </th>
-                <th
-                  x-show="board === 'full_cycle'"
-                  style="min-width: 36px; text-align: center"
-                  @click="srt('apps_count')"
-                  :class="{sk:sortCol==='apps_count'}"
-                  title="Applicants — click to sort"
-                >
-                  <svg class="col-icon" viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
-                    <circle cx="12" cy="7" r="4"></circle>
-                  </svg>
-                  <i
-                    class="sa"
-                    :class="{on:sortCol==='apps_count'}"
-                    x-text="arr('apps_count')"
-                  ></i>
-                </th>
-                <th
-                  style="min-width: 64px; text-align: center"
-                  @click="srt('status')"
-                  :class="{sk:sortCol==='status'}"
-                >
-                  Status
-                  <i
-                    class="sa"
-                    :class="{on:sortCol==='status'}"
-                    x-text="arr('status')"
-                  ></i>
-                </th>
-                <th style="min-width: 70px">ID</th>
+                <th class="c" @click="srt('status')" :class="{sk:sortCol==='status'}">Status <i class="sa" :class="{on:sortCol==='status'}" x-text="arr('status')"></i></th>
               </tr>
             </thead>
             <tbody>
               <template x-for="(p, i) in filtered" :key="p.job_id">
-                <tr
-                  @click="sel(p.job_id, i)"
-                  :class="{sel: selId===p.job_id}"
-                  :id="'r'+p.job_id"
-                >
-                  <td class="tc" :title="p.title" x-text="p.title"></td>
-                  <td class="oc" :title="p.org" x-text="p.org"></td>
-                  <td class="lc" x-text="p.location"></td>
-                  <td
-                    class="dc"
-                    :class="{urg: isUrgent(p.deadline_iso)}"
-                    x-text="fmtDue(p.deadline_iso)"
-                  ></td>
-                  <td
-                    class="sc"
-                    :style="scStyle(p.score_resume, true)"
-                    x-text="fmtS(p.score_resume)"
-                  ></td>
-                  <template x-for="r in roleList" :key="r">
-                    <td
-                      class="sc"
-                      :style="scStyle(p['score_'+r])"
-                      x-text="fmtS(p['score_'+r])"
-                    ></td>
-                  </template>
-                  <td
-                    class="sc"
-                    :style="scStyle(p.comp_score)"
-                    x-text="fmtPay(p.comp_hourly)"
-                    :title="p.comp_hourly != null ? 'est. $'+p.comp_hourly.toFixed(2)+'/hr' : 'not listed'"
-                  ></td>
-                  <td
-                    x-show="hasRatings"
-                    class="nc"
-                    :title="facultyTip(p)"
-                    x-text="p.hires_total ?? '—'"
-                  ></td>
-                  <td
-                    x-show="hasRatings"
-                    class="nc"
-                    :title="termTip(p)"
-                    x-text="fmtPct(p.term_pct)"
-                  ></td>
-                  <td class="nc" x-text="p.openings ?? '—'"></td>
-                  <td
-                    x-show="board === 'full_cycle'"
-                    class="nc"
-                    :title="p.apps_count != null ? p.apps_count + ' applicants' : ''"
-                    x-text="p.apps_count ?? '—'"
-                  ></td>
-                  <td
-                    class="st"
-                    :class="'st-' + (p.status || 'new')"
-                    x-text="statusLabel(p.status)"
-                  ></td>
-                  <td
-                    class="ic"
-                    @click.stop="cpId(p.job_id)"
-                    :title="'Click to copy'"
-                  >
-                    <span x-text="cpId_=== p.job_id ? '✓' : p.job_id"></span>
+                <tr @click="sel(p.job_id, i)" :class="{sel: selId===p.job_id}" :id="'r'+p.job_id">
+                  <td :title="p.title + ' — ' + p.org">
+                    <span class="tc" x-text="p.title"></span>
+                    <span class="oc" x-text="p.org"></span>
                   </td>
+                  <td class="lc" :title="[p.location, p.region, p.country].filter(Boolean).join(' · ')" x-text="p.location || '—'"></td>
+                  <td class="dc" :class="{urg: isUrgent(p.deadline_iso)}" x-text="fmtDue(p.deadline_iso)"></td>
+                  <td class="sc" :style="scStyle(p.score_resume, true)" x-text="fmtS(p.score_resume)"></td>
+                  <template x-for="r in visibleRoles" :key="r">
+                    <td class="sc" :style="scStyle(p['score_'+r])" x-text="fmtS(p['score_'+r])"></td>
+                  </template>
+                  <td class="sc" :style="scStyle(p.comp_score)" :title="p.comp_hourly != null ? 'est. $'+p.comp_hourly.toFixed(2)+'/hr' : 'pay not listed'" x-text="fmtPay(p.comp_hourly)"></td>
+                  <td class="sc" style="color: var(--tx2)" x-text="p.openings ?? '—'"></td>
+                  <template x-if="board === 'full_cycle'">
+                    <td class="sc" style="color: var(--tx2)" :title="p.apps_count != null ? p.apps_count + ' applicants' : ''" x-text="p.apps_count ?? '—'"></td>
+                  </template>
+                  <td class="sc" :class="termCls(p)" :title="termTip(p)" x-text="termGlyph(p)"></td>
+                  <td class="st" :class="'st-' + (p.status || 'new')" x-text="statusLabel(p.status)"></td>
                 </tr>
               </template>
             </tbody>
           </table>
-          <template x-if="boardPostings.length && !fEmail && !fLink && !fWw">
-            <div class="empty-list">
-              Select Apply by&nbsp;<strong>Email</strong>,
-              <strong>Link</strong>, <strong>WW</strong>, or any combination to
-              see postings
-            </div>
-          </template>
-          <template
-            x-if="boardPostings.length && (fEmail || fLink || fWw) && !filtered.length"
-          >
-            <div class="empty-list">No postings match the current filters</div>
+          <template x-if="boardPostings.length && !filtered.length">
+            <div class="empty-list" x-text="emptyReason()"></div>
           </template>
         </div>
+        <template x-if="!loading && !apiError && !boardPostings.length">
+          <div class="empty-list">No postings on this board yet. Scrape it with <code>&nbsp;make scrape BOARD=…&nbsp;</code> then <code>&nbsp;make pipeline</code>.</div>
+        </template>
       </div>
 
-      <!-- detail pane -->
-      <div id="detail-pane">
-        <template x-if="!selPosting">
-          <div class="dp-empty">
-            <span>No posting selected</span>
-            <span class="hint">Click a row or press <kbd>j</kbd> to begin</span>
-          </div>
-        </template>
-
+      <!-- drawer -->
+      <div id="drawer" x-show="selPosting" x-cloak @keydown.escape.stop="closeDrawer()">
+        <div
+          class="gutter"
+          :class="{active: drag?.side==='drawer'}"
+          @pointerdown="dragStart('drawer', $event)"
+          @dblclick="resetPane('drawer')"
+          title="Drag to resize · double-click to reset"
+        ></div>
         <template x-if="selPosting">
-          <div class="dp">
-            <div class="dp-title" x-text="selPosting.title"></div>
-            <div class="dp-meta">
-              <span class="co" x-text="selPosting.org"></span>
-              <span class="dp-sep">·</span>
-              <span x-text="selPosting.location || '—'"></span>
-              <span class="dp-sep">·</span>
-              <span
-                class="dln"
-                :class="{urg: isUrgent(selPosting.deadline_iso)}"
-                x-text="fmtDueFull(selPosting.deadline_iso)"
-              ></span>
-              <template x-if="selPosting.comp_hourly">
-                <span>
-                  <span class="dp-sep">·</span>
-                  <span
-                    class="pay-inline"
-                    x-text="'$'+selPosting.comp_hourly.toFixed(0)+'/h'"
-                  ></span>
-                </span>
-              </template>
-              <template x-for="txt in metaExtras(selPosting)" :key="txt">
-                <span>
-                  <span class="dp-sep">·</span>
-                  <span x-text="txt"></span>
-                </span>
+          <div class="dp" x-ref="dp">
+            <div class="dp-head">
+              <div class="dp-title-row">
+                <div>
+                  <div class="dp-title" x-text="selPosting.title"></div>
+                  <div class="dp-org" x-text="selPosting.org"></div>
+                </div>
+                <button class="close-btn" @click="closeDrawer()" title="Close (Esc)">×</button>
+              </div>
+              <div class="status-set">
+                <template x-for="s in statusList" :key="s.id">
+                  <button class="status-btn" :class="{on: (selPosting.status || 'new') === s.id}" @click="setStatus(selPosting, s.id)" x-text="s.label"></button>
+                </template>
+              </div>
+            </div>
+
+            <div class="facts">
+              <template x-for="f in facts(selPosting)" :key="f.k">
+                <div class="fact">
+                  <span class="k" x-text="f.k"></span>
+                  <span class="v" :class="f.cls || ''" :title="f.v" x-text="f.v"></span>
+                </div>
               </template>
             </div>
 
-            <div class="status-set">
-              <template x-for="s in statusList" :key="s.id">
-                <button
-                  class="status-btn"
-                  :class="{on: (selPosting.status || 'new') === s.id}"
-                  @click="setStatus(selPosting, s.id)"
-                  x-text="s.label"
-                ></button>
-              </template>
+            <div class="block">
+              <h3>Apply</h3>
+              <div class="apply-box">
+                <template x-if="selPosting.apply_email">
+                  <div class="apply-line">
+                    <a :href="'mailto:'+selPosting.apply_email" x-text="selPosting.apply_email"></a>
+                    <button class="cp-btn" :class="{ok: cpEmail_}" @click="cpEmail(selPosting.apply_email)" x-text="cpEmail_ ? 'Copied' : 'Copy'"></button>
+                  </div>
+                </template>
+                <template x-for="l in selPosting.apply_links || []" :key="l">
+                  <div class="apply-line">
+                    <a :href="l" target="_blank" rel="noopener" :title="l" x-text="l"></a>
+                  </div>
+                </template>
+                <template x-if="!selPosting.apply_email && !(selPosting.apply_links || []).length">
+                  <div class="apply-line">
+                    <a href="https://waterlooworks.uwaterloo.ca/myAccount/co-op/direct/jobs.htm" target="_blank" rel="noopener">Apply on WaterlooWorks</a>
+                  </div>
+                </template>
+                <template x-if="selPosting.documents_required?.length">
+                  <div class="chips-wrap" style="margin-top: 4px">
+                    <template x-for="doc in selPosting.documents_required" :key="doc">
+                      <span class="kw" :class="{'kw-fde': /cover letter/i.test(doc)}" x-text="doc"></span>
+                    </template>
+                  </div>
+                </template>
+              </div>
             </div>
 
-            <!-- score grid: resume + 7 roles + pay = 9 boxes -->
-            <div class="sg">
+            <div class="scores">
               <div class="sb">
                 <div class="sb-label">Resume</div>
-                <div
-                  class="sb-val"
-                  :style="scColor(selPosting.score_resume, true)"
-                  x-text="fmtS(selPosting.score_resume)"
-                ></div>
+                <div class="sb-val" :style="scStyle(selPosting.score_resume, true)" x-text="fmtS(selPosting.score_resume)"></div>
               </div>
               <template x-for="r in roleList" :key="r">
                 <div class="sb">
                   <div class="sb-label" x-text="rLabel(r)"></div>
-                  <div
-                    class="sb-val"
-                    :style="scColor(selPosting['score_'+r])"
-                    x-text="fmtS(selPosting['score_'+r])"
-                  ></div>
+                  <div class="sb-val" :style="scStyle(selPosting['score_'+r])" x-text="fmtS(selPosting['score_'+r])"></div>
                 </div>
               </template>
-              <div class="sb">
-                <div class="sb-label">Pay</div>
-                <div
-                  class="sb-val"
-                  :style="scColor(selPosting.comp_score)"
-                  x-text="fmtPay(selPosting.comp_hourly)"
-                ></div>
-              </div>
-              <template x-if="selPosting.rating_avg != null">
-                <div
-                  class="sb"
-                  :title="selPosting.rating_count + ' ratings · all co-op average ' + selPosting.rating_all_avg"
-                >
-                  <div class="sb-label">Rating</div>
-                  <div
-                    class="sb-val"
-                    :style="scColor(ratingScore(selPosting.rating_avg))"
-                    x-text="selPosting.rating_avg.toFixed(1) + '/10'"
-                  ></div>
+              <template x-if="selPosting.sem_score != null && searchMode === 'semantic'">
+                <div class="sb">
+                  <div class="sb-label">Similarity</div>
+                  <div class="sb-val" x-text="selPosting.sem_score.toFixed(2)"></div>
                 </div>
               </template>
             </div>
 
-            <!-- apply -->
-            <div class="apply-row">
-              <span class="apply-lbl">Apply</span>
-              <template x-if="selPosting.apply_email">
-                <a
-                  class="apply-val"
-                  :href="'mailto:'+selPosting.apply_email"
-                  x-text="selPosting.apply_email"
-                ></a>
-              </template>
-              <template x-for="l in selPosting.apply_links || []" :key="l">
-                <a
-                  class="apply-val"
-                  :href="l"
-                  target="_blank"
-                  rel="noopener"
-                  :title="l"
-                  x-text="l"
-                ></a>
-              </template>
-              <template
-                x-if="!selPosting.apply_email && !selPosting.apply_link"
-              >
-                <a
-                  class="apply-val"
-                  href="https://waterlooworks.uwaterloo.ca/myAccount/co-op/direct/jobs.htm"
-                  target="_blank"
-                  rel="noopener"
-                  >Apply on WaterlooWorks ↗</a
-                >
-              </template>
-              <template x-if="selPosting.apply_email">
-                <button
-                  class="cp-btn"
-                  :class="{ok: cpEmail_}"
-                  @click="cpEmail(selPosting.apply_email)"
-                  x-text="cpEmail_ ? '✓ Copied' : 'm'"
-                ></button>
-              </template>
-            </div>
-
-            <!-- job ID -->
-            <div class="id-row">
-              <span class="id-lbl">Job ID</span>
-              <span class="id-val" x-text="selPosting.job_id"></span>
-              <button
-                class="cp-btn"
-                :class="{ok: cpId_===selPosting.job_id}"
-                @click="cpId(selPosting.job_id)"
-                x-text="cpId_===selPosting.job_id ? '✓' : 'c'"
-              ></button>
-            </div>
-
-            <template x-if="selPosting.documents_required?.length">
-              <div class="sec">
-                <div class="sec-lbl">Documents</div>
-                <div class="kw-chips">
-                  <template x-for="doc in selPosting.documents_required" :key="doc">
-                    <span
-                      class="kw"
-                      :class="{'kw-fde': /cover letter/i.test(doc)}"
-                      x-text="doc"
-                    ></span>
-                  </template>
-                </div>
-              </div>
-            </template>
-
-            <template x-if="selPosting.hires_total != null">
-              <div class="sec">
-                <div class="sec-lbl">Hiring history</div>
-                <div class="sec-txt" x-text="hiringText(selPosting)"></div>
-              </div>
-            </template>
-
-            <!-- keyword hits -->
-            <template
-              x-if="Object.values(selPosting.keyword_hits||{}).some(v=>v.length)"
-            >
-              <div class="sec">
-                <div class="sec-lbl">Matched keywords</div>
-                <div class="kw-chips">
-                  <template
-                    x-for="[role, hits] in Object.entries(selPosting.keyword_hits||{})"
-                    :key="role"
-                  >
+            <template x-if="Object.values(selPosting.keyword_hits||{}).some(v=>v.length)">
+              <div class="block">
+                <h3>Matched keywords</h3>
+                <div class="chips-wrap">
+                  <template x-for="[role, hits] in Object.entries(selPosting.keyword_hits||{})" :key="role">
                     <template x-for="kw in hits" :key="kw">
                       <span class="kw" :class="kwCls(role)">
                         <span class="kw-r" x-text="rLabel(role)"></span>
@@ -1636,41 +1630,146 @@
               </div>
             </template>
 
-            <div class="dp-divider"></div>
-
             <template x-if="selPosting.summary">
-              <div class="sec">
-                <div class="sec-lbl">Summary</div>
-                <div class="sec-txt" x-text="snip(selPosting.summary)"></div>
-              </div>
+              <details class="sec" open>
+                <summary>Summary</summary>
+                <div class="sec-txt" x-effect="renderPostingText($el, selPosting?.summary)"></div>
+              </details>
             </template>
-
             <template x-if="selPosting.responsibilities">
-              <div class="sec">
-                <div class="sec-lbl">Responsibilities</div>
-                <div
-                  class="sec-txt"
-                  x-text="snip(selPosting.responsibilities)"
-                ></div>
+              <details class="sec" open>
+                <summary>Responsibilities</summary>
+                <div class="sec-txt" x-effect="renderPostingText($el, selPosting?.responsibilities)"></div>
+              </details>
+            </template>
+            <template x-if="selPosting.required_skills">
+              <details class="sec" open>
+                <summary>Required skills</summary>
+                <div class="sec-txt" x-effect="renderPostingText($el, selPosting?.required_skills)"></div>
+              </details>
+            </template>
+
+            <template x-if="selPosting.hires_total != null">
+              <div class="block">
+                <h3>Hiring history at Waterloo</h3>
+                <div class="hh">
+                  <span class="k">Previous hires</span>
+                  <span x-text="selPosting.hires_total"></span>
+                  <template x-if="selPosting.rating_avg != null">
+                    <span class="k">Satisfaction</span>
+                  </template>
+                  <template x-if="selPosting.rating_avg != null">
+                    <span x-text="selPosting.rating_avg + '/10 from ' + selPosting.rating_count + ' ratings' + (selPosting.rating_all_avg != null ? ' (all co-op: ' + selPosting.rating_all_avg + ')' : '')"></span>
+                  </template>
+                  <template x-if="Object.keys(selPosting.hires_by_term || {}).length">
+                    <span class="k">By work term</span>
+                  </template>
+                  <template x-if="Object.keys(selPosting.hires_by_term || {}).length">
+                    <div class="bars">
+                      <template x-for="n in ['1','2','3','4','5','6']" :key="n">
+                        <div class="bar" :class="{mine: String(myTerm) === n}" :title="'Work term ' + n + ': ' + (selPosting.hires_by_term[n] ?? 0) + '% of hires'">
+                          <i :style="'height:' + Math.max(2, Math.round((selPosting.hires_by_term[n] ?? 0) * 0.6)) + 'px'"></i>
+                          <span x-text="'T' + n + (n === '6' ? '+' : '')"></span>
+                          <span x-text="(selPosting.hires_by_term[n] ?? 0) + '%'"></span>
+                        </div>
+                      </template>
+                    </div>
+                  </template>
+                  <template x-if="Object.keys(selPosting.hires_by_faculty || {}).length">
+                    <span class="k">By faculty</span>
+                  </template>
+                  <template x-if="Object.keys(selPosting.hires_by_faculty || {}).length">
+                    <span x-text="pctList(selPosting.hires_by_faculty)"></span>
+                  </template>
+                  <template x-if="selPosting.top_programs?.length">
+                    <span class="k">Top programs</span>
+                  </template>
+                  <template x-if="selPosting.top_programs?.length">
+                    <span x-text="selPosting.top_programs.map(([n, c]) => n + ' (' + c + ')').join(', ')"></span>
+                  </template>
+                </div>
               </div>
             </template>
 
-            <template x-if="selPosting.required_skills">
-              <div class="sec">
-                <div class="sec-lbl">Required Skills</div>
-                <div
-                  class="sec-txt"
-                  x-text="snip(selPosting.required_skills)"
-                ></div>
+            <template x-if="selPosting.special_dates">
+              <div class="block">
+                <h3>Term dates</h3>
+                <div class="sec-txt" style="padding-left: 0" x-effect="renderPostingText($el, selPosting?.special_dates)"></div>
               </div>
             </template>
+
+            <div class="foot">
+              <span>Job ID</span>
+              <span class="id" x-text="selPosting.job_id"></span>
+              <button class="cp-btn" :class="{ok: cpId_===selPosting.job_id}" @click="cpId(selPosting.job_id)" x-text="cpId_===selPosting.job_id ? 'Copied' : 'Copy'"></button>
+              <span style="margin-left:auto" x-text="selPosting.work_term"></span>
+            </div>
           </div>
         </template>
       </div>
     </div>
 
     <script>
+      // Turn WaterlooWorks description text into paragraphs and nested lists.
+      // WW emits list items as tab-indented lines ("\n\n\n\tItem\n\t\tSub-item");
+      // some employers paste bullet glyphs instead. Builds DOM nodes only — no HTML
+      // from postings is ever parsed as markup.
+      function renderPostingText(el, txt) {
+        const frag = document.createDocumentFragment();
+        const stack = []; // open <ul> elements by depth
+        const closeTo = (depth) => {
+          while (stack.length > depth) stack.pop();
+        };
+        const lines = String(txt || "").replace(/\r\n?/g, "\n").split("\n");
+        for (const raw of lines) {
+          let depth = 0;
+          let line = raw;
+          while (line.startsWith("\t") || line.startsWith("    ")) {
+            line = line.startsWith("\t") ? line.slice(1) : line.slice(4);
+            depth += 1;
+          }
+          line = line.trim();
+          const bullet = line.match(/^([•·▪◦\-\*]|o)\s+(.*)$/);
+          if (bullet) {
+            line = bullet[2].trim();
+            depth = Math.max(depth, 1);
+          }
+          if (!line) {
+            closeTo(0);
+            continue;
+          }
+          if (depth === 0) {
+            closeTo(0);
+            const p = document.createElement("p");
+            if (/:\s*$/.test(line)) p.className = "lead";
+            p.textContent = line;
+            frag.appendChild(p);
+            continue;
+          }
+          closeTo(depth);
+          while (stack.length < depth) {
+            const ul = document.createElement("ul");
+            if (stack.length === 0) frag.appendChild(ul);
+            else {
+              const parent = stack[stack.length - 1];
+              const host = parent.lastElementChild || parent.appendChild(document.createElement("li"));
+              host.appendChild(ul);
+            }
+            stack.push(ul);
+          }
+          const li = document.createElement("li");
+          li.textContent = line;
+          stack[stack.length - 1].appendChild(li);
+        }
+        el.replaceChildren(frag);
+      }
+
       function app() {
+        const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+        const readNum = (k) => {
+          const v = parseInt(localStorage.getItem(k), 10);
+          return Number.isFinite(v) ? v : null;
+        };
         return {
           postings: [],
           filtered: [],
@@ -1678,6 +1777,12 @@
           apiError: "",
           theme: "night",
           search: "",
+          searchMode: "text",
+          semScores: null,
+          semQ: "",
+          semLoading: false,
+          _semCtl: null,
+          _semTimer: null,
           sortCol: "score_resume",
           sortDir: -1,
           selId: null,
@@ -1695,61 +1800,159 @@
             { id: "ignored", label: "Ignored" },
           ],
           roleList: ["software", "ai_ml", "firmware", "hardware"],
-          roles: {
-            software: false,
-            ai_ml: false,
-            firmware: false,
-            hardware: false,
+          // Checkbox groups. One rule everywhere: nothing checked = no filter;
+          // checked options are OR'd. `derived` groups get their options from
+          // the data on each board.
+          groups: {
+            status: {
+              label: "Status",
+              opts: [
+                { v: "new", l: "New" },
+                { v: "maybe", l: "Maybe" },
+                { v: "applied", l: "Applied" },
+                { v: "ignored", l: "Ignored" },
+              ],
+              sel: {},
+              get: (p) => p.status || "new",
+            },
+            roles: {
+              label: "Role",
+              opts: [
+                { v: "software", l: "Software" },
+                { v: "ai_ml", l: "AI / ML" },
+                { v: "firmware", l: "Firmware" },
+                { v: "hardware", l: "Hardware" },
+              ],
+              sel: {},
+              match: (p, on) => on.some((r) => (p["score_" + r] ?? 0) > 0),
+            },
+            apply: {
+              label: "Apply by",
+              opts: [
+                { v: "email", l: "Email" },
+                { v: "link", l: "External link" },
+                { v: "ww", l: "WaterlooWorks only" },
+              ],
+              sel: {},
+              get: (p) => p.apply_method,
+            },
+            term: {
+              label: "Hired my term before",
+              opts: [
+                { v: "yes", l: "Yes, hired at my term" },
+                { v: "no", l: "Hires, but not my term" },
+                { v: "na", l: "No hiring history" },
+              ],
+              sel: {},
+              get: (p) => ["no", "na", "yes"][p.term_rank],
+            },
+            dur: {
+              label: "Duration",
+              opts: [
+                { v: "4", l: "4 months" },
+                { v: "8", l: "8 months" },
+              ],
+              sel: {},
+              get: (p) => (p.duration_months == null ? "" : String(p.duration_months)),
+            },
+            lvl: {
+              label: "Level",
+              opts: [
+                { v: "Junior", l: "Junior" },
+                { v: "Intermediate", l: "Intermediate" },
+                { v: "Senior", l: "Senior" },
+              ],
+              sel: {},
+              match: (p, on) => (p.levels || []).some((l) => on.includes(l)),
+            },
+            arr: {
+              label: "Arrangement",
+              opts: [
+                { v: "Remote", l: "Remote" },
+                { v: "Hybrid", l: "Hybrid" },
+                { v: "In-person", l: "In-person" },
+              ],
+              sel: {},
+              get: (p) => p.arrangement,
+            },
+            country: { label: "Country", opts: [], sel: {}, derived: true, get: (p) => p.country },
+            region: { label: "Region", opts: [], sel: {}, derived: true, closed: true, get: (p) => p.region },
           },
-          fEmail: true,
-          fLink: true,
-          fWw: true,
-          fDur: { 4: false, 8: false },
-          fArr: { Remote: false, Hybrid: false, "In-person": false },
-          fLvl: { Junior: false, Intermediate: false, Senior: false },
+          counts: {},
           myTerm: 1,
-          fMyTerm: false,
+          fHideIgnored: true,
+          fMinPay: null,
+          fPayUnlisted: true,
+          fHasHistory: false,
+          fCover: "any",
+          fMaxApps: null,
+          fMinOpen: null,
+          fDueDays: 0,
+          fHideExpired: false,
+          // panes
+          filterOpen: true,
+          filterW: 260,
+          drawerW: 720,
+          drag: null,
           deletingExpired: false,
           cpId_: null,
           cpEmail_: false,
-          // palette
           pal: false,
           palQ: "",
           palI: 0,
           palAll: [],
           palItems: [],
 
+          get groupList() {
+            return Object.entries(this.groups).map(([key, g]) => ({ key, ...g }));
+          },
+          get visibleRoles() {
+            const on = this.roleList.filter((r) => this.groups.roles.sel[r]);
+            return on.length ? on : this.roleList;
+          },
+          get activeFilters() {
+            const out = [];
+            for (const [key, g] of Object.entries(this.groups)) {
+              for (const o of g.opts) {
+                if (g.sel[o.v]) out.push({ id: `${key}:${o.v}`, label: `${g.label}: ${o.l}`, remove: () => (g.sel[o.v] = false) });
+              }
+            }
+            const add = (id, label, remove) => out.push({ id, label, remove });
+            if (this.fMinPay) add("pay", `Pay ≥ $${this.fMinPay}/hr`, () => (this.fMinPay = null));
+            if (this.fMinPay && !this.fPayUnlisted) add("payun", "Pay listed only", () => (this.fPayUnlisted = true));
+            if (this.fHasHistory) add("hist", "Has hired from Waterloo", () => (this.fHasHistory = false));
+            if (this.fCover === "yes") add("cover", "Cover letter required", () => (this.fCover = "any"));
+            if (this.fCover === "no") add("cover", "No cover letter", () => (this.fCover = "any"));
+            if (this.fMaxApps != null && this.fMaxApps !== "" && this.board === "full_cycle") add("apps", `≤ ${this.fMaxApps} applicants`, () => (this.fMaxApps = null));
+            if (this.fMinOpen) add("open", `≥ ${this.fMinOpen} openings`, () => (this.fMinOpen = null));
+            if (this.fDueDays) add("due", `Due within ${this.fDueDays}d`, () => (this.fDueDays = 0));
+            if (this.fHideExpired) add("exp", "Hide expired", () => (this.fHideExpired = false));
+            return out;
+          },
           get selPosting() {
-            return this.selId
-              ? (this.filtered.find((p) => p.job_id === this.selId) ?? null)
-              : null;
+            return this.selId ? (this.postings.find((p) => p.job_id === this.selId) ?? null) : null;
           },
-
           get resumeScoresUnavailable() {
-            return (
-              this.postings.length > 0 &&
-              this.postings.every((p) => p.score_resume == null)
-            );
+            return this.postings.length > 0 && this.postings.every((p) => p.score_resume == null);
           },
-
           get boardPostings() {
             return this.postings.filter((p) => p.board_type === this.board);
           },
-
-          get hasRatings() {
-            return this.boardPostings.some((p) => p.hires_total != null);
-          },
-
           get jobCountLabel() {
             if (this.loading) return "loading…";
             const n = this.boardPostings.length;
             if (!n) return "no jobs";
-            return `showing ${this.filtered.length} of ${n} jobs`;
+            return `${this.filtered.length} of ${n}`;
           },
 
           async init() {
             this.theme = localStorage.getItem("goosehunt.theme") || "night";
-            this.myTerm = parseInt(localStorage.getItem("goosehunt.myTerm"), 10) || 1;
+            this.myTerm = clamp(readNum("goosehunt.myTerm") || 1, 1, 8);
+            this.searchMode = localStorage.getItem("goosehunt.searchMode") === "semantic" ? "semantic" : "text";
+            this.filterOpen = localStorage.getItem("goosehunt.filterOpen") !== "0";
+            this.filterW = readNum("goosehunt.filterW") ?? 260;
+            this.drawerW = readNum("goosehunt.drawerW") ?? Math.round(window.innerWidth * 0.55);
+            this.clampPanes();
             try {
               const r = await fetch("/api/postings");
               if (!r.ok) {
@@ -1760,8 +1963,14 @@
                 throw new Error(detail);
               }
               this.postings = await r.json();
+              if (!this.postings.some((p) => p.board_type === this.board)) {
+                const other = this.boards.find((b) => this.postings.some((p) => p.board_type === b.id));
+                if (other) this.board = other.id;
+              }
+              this.recount();
               this.applyFilters();
               this._mkPal();
+              if (this.searchMode === "semantic") this.warmModel();
             } catch (err) {
               this.apiError = err?.message || "Could not load postings.";
             } finally {
@@ -1774,6 +1983,53 @@
             localStorage.setItem("goosehunt.theme", this.theme);
           },
 
+          // ── panes ──────────────────────────────────────────────────
+          toggleFilters() {
+            this.filterOpen = !this.filterOpen;
+            localStorage.setItem("goosehunt.filterOpen", this.filterOpen ? "1" : "0");
+          },
+          paneLimits(side) {
+            const w = this.$refs.ws?.getBoundingClientRect().width || window.innerWidth;
+            return side === "filter" ? [200, 420] : [420, Math.round(w * 0.9)];
+          },
+          clampPanes() {
+            this.filterW = clamp(this.filterW, ...this.paneLimits("filter"));
+            this.drawerW = clamp(this.drawerW, ...this.paneLimits("drawer"));
+          },
+          dragStart(side, e) {
+            this.drag = { side, id: e.pointerId, rect: this.$refs.ws.getBoundingClientRect() };
+            e.target.setPointerCapture?.(e.pointerId);
+            document.body.classList.add("dragging");
+          },
+          dragMove(e) {
+            if (!this.drag || e.pointerId !== this.drag.id) return;
+            const r = this.drag.rect;
+            if (this.drag.side === "filter") this.filterW = clamp(e.clientX - r.left, ...this.paneLimits("filter"));
+            else this.drawerW = clamp(r.right - e.clientX, ...this.paneLimits("drawer"));
+          },
+          dragEnd(e) {
+            if (!this.drag || e.pointerId !== this.drag.id) return;
+            localStorage.setItem("goosehunt.filterW", this.filterW);
+            localStorage.setItem("goosehunt.drawerW", this.drawerW);
+            this.drag = null;
+            document.body.classList.remove("dragging");
+          },
+          resetPane(side) {
+            if (side === "filter") {
+              this.filterW = 260;
+              localStorage.removeItem("goosehunt.filterW");
+            } else {
+              this.drawerW = Math.round(window.innerWidth * 0.55);
+              localStorage.removeItem("goosehunt.drawerW");
+            }
+            this.clampPanes();
+          },
+          closeDrawer() {
+            this.selId = null;
+            this.selIdx = -1;
+          },
+
+          // ── data ───────────────────────────────────────────────────
           async setStatus(posting, status) {
             if (!posting || posting.status === status) return;
             const previous = posting.status || "new";
@@ -1781,8 +2037,8 @@
             try {
               const r = await fetch(`/api/postings/${posting.job_id}/status`, {
                 method: "PATCH",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({status}),
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ status }),
               });
               if (!r.ok) {
                 let detail = "Could not update status.";
@@ -1791,39 +2047,27 @@
                 } catch (_) {}
                 throw new Error(detail);
               }
+              this.recount();
+              this.applyFilters();
             } catch (err) {
               posting.status = previous;
               this.apiError = err?.message || "Could not update status.";
             }
           },
-
           setBoard(id) {
             this.board = id;
+            this.recount();
             this.applyFilters();
           },
-
-          setMyTerm(v) {
-            this.myTerm = Math.min(8, Math.max(1, parseInt(v, 10) || 1));
-            localStorage.setItem("goosehunt.myTerm", this.myTerm);
-            this.applyFilters();
-          },
-
           async deleteExpired() {
             if (this.deletingExpired) return;
             const now = Date.now();
-            const expired = this.postings.filter(
-              (p) => p.deadline_iso && new Date(p.deadline_iso) < now,
-            ).length;
+            const expired = this.postings.filter((p) => p.deadline_iso && new Date(p.deadline_iso) < now).length;
             if (!expired) {
               this.apiError = "No expired jobs to delete.";
               return;
             }
-            if (
-              !confirm(
-                `Delete ${expired} expired job${expired === 1 ? "" : "s"}? This cannot be undone.`,
-              )
-            )
-              return;
+            if (!confirm(`Delete ${expired} expired job${expired === 1 ? "" : "s"}? This cannot be undone.`)) return;
             this.deletingExpired = true;
             try {
               const r = await fetch("/api/postings/expired", { method: "DELETE" });
@@ -1834,15 +2078,11 @@
                 } catch (_) {}
                 throw new Error(detail);
               }
-              // Drop the deleted rows locally so the list updates without a reload.
               const cutoff = Date.now();
-              this.postings = this.postings.filter(
-                (p) => !(p.deadline_iso && new Date(p.deadline_iso) < cutoff),
-              );
-              if (this.selId && !this.postings.some((p) => p.job_id === this.selId))
-                this.selId = null;
+              this.postings = this.postings.filter((p) => !(p.deadline_iso && new Date(p.deadline_iso) < cutoff));
+              if (this.selId && !this.postings.some((p) => p.job_id === this.selId)) this.closeDrawer();
+              this.recount();
               this.applyFilters();
-              this._mkPal();
             } catch (err) {
               this.apiError = err?.message || "Could not delete expired jobs.";
             } finally {
@@ -1850,96 +2090,253 @@
             }
           },
 
-          applyFilters() {
-            const term = String(this.myTerm);
-            this.postings.forEach((p) => {
-              p.term_pct = p.hires_by_term?.[term] ?? null;
-            });
-            let rows = this.postings.filter((p) => p.board_type === this.board);
-            const q = this.search.trim().toLowerCase();
-            if (q)
-              rows = rows.filter(
-                (p) =>
-                  (p.title || "").toLowerCase().includes(q) ||
-                  (p.org || "").toLowerCase().includes(q) ||
-                  (p.location || "").toLowerCase().includes(q) ||
-                  (p.job_id || "").toLowerCase().includes(q) ||
-                  (p.summary || "").toLowerCase().includes(q) ||
-                  (p.responsibilities || "").toLowerCase().includes(q) ||
-                  (p.required_skills || "").toLowerCase().includes(q),
-              );
-            const active = this.roleList.filter((r) => this.roles[r]);
-            if (active.length) {
-              rows = rows.filter((p) =>
-                active.some((r) => (p["score_" + r] ?? 0) > 0),
-              );
+          // ── filters ────────────────────────────────────────────────
+          computeTerm(p) {
+            const pct = p.hires_by_term?.[String(this.myTerm)] ?? null;
+            p.term_pct = pct;
+            p.term_rank = p.hires_total == null ? 1 : pct > 0 ? 2 : 0;
+          },
+          recount() {
+            const rows = this.boardPostings;
+            rows.forEach((p) => this.computeTerm(p));
+            const counts = {};
+            for (const [key, g] of Object.entries(this.groups)) {
+              if (g.derived) {
+                const tally = {};
+                rows.forEach((p) => {
+                  const v = g.get(p);
+                  if (v) tally[v] = (tally[v] || 0) + 1;
+                });
+                g.opts = Object.entries(tally)
+                  .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+                  .map(([v]) => ({ v, l: v }));
+                g.opts.forEach((o) => {
+                  if (!(o.v in g.sel)) g.sel[o.v] = false;
+                });
+              }
+              counts[key] = {};
+              for (const o of g.opts) {
+                counts[key][o.v] = rows.filter((p) => (g.match ? g.match(p, [o.v]) : g.get(p) === o.v)).length;
+              }
             }
-            const durs = Object.keys(this.fDur).filter((d) => this.fDur[d]).map(Number);
-            if (durs.length)
-              rows = rows.filter((p) => durs.includes(p.duration_months));
-            const arrs = Object.keys(this.fArr).filter((a) => this.fArr[a]);
-            if (arrs.length) rows = rows.filter((p) => arrs.includes(p.arrangement));
-            const lvls = Object.keys(this.fLvl).filter((l) => this.fLvl[l]);
-            if (lvls.length)
-              rows = rows.filter((p) => (p.levels || []).some((l) => lvls.includes(l)));
-            // Keep employers with no hiring history; drop only those whose
-            // history shows no hires at my term number.
-            if (this.fMyTerm)
-              rows = rows.filter((p) => p.hires_total == null || p.term_pct > 0);
-            if (!this.fEmail && !this.fLink && !this.fWw) {
-              this.filtered = [];
+            counts.history = rows.filter((p) => p.hires_total != null).length;
+            this.counts = counts;
+          },
+          setMyTerm(n) {
+            this.myTerm = clamp(parseInt(n, 10) || 1, 1, 8);
+            localStorage.setItem("goosehunt.myTerm", this.myTerm);
+            this.recount();
+            this.applyFilters();
+          },
+          groupActive(key) {
+            const g = this.groups[key];
+            return g.opts.some((o) => g.sel[o.v]);
+          },
+          groupBadge(key) {
+            const g = this.groups[key];
+            const on = g.opts.filter((o) => g.sel[o.v]).length;
+            return on ? `${on} selected` : "";
+          },
+          clearFilters() {
+            for (const g of Object.values(this.groups)) {
+              Object.keys(g.sel).forEach((k) => (g.sel[k] = false));
+            }
+            this.fHideIgnored = true;
+            this.fMinPay = null;
+            this.fPayUnlisted = true;
+            this.fHasHistory = false;
+            this.fCover = "any";
+            this.fMaxApps = null;
+            this.fMinOpen = null;
+            this.fDueDays = 0;
+            this.fHideExpired = false;
+            this.applyFilters();
+          },
+          emptyReason() {
+            if (this.searchMode === "semantic" && this.semQ) return "Nothing similar enough to your description. Try different wording or loosen the filters.";
+            if (this.search.trim()) return "No postings match your search and filters.";
+            return "No postings match the current filters. Clear some in the sidebar.";
+          },
+
+          onSearchInput() {
+            if (this.searchMode === "text") {
+              this.applyFilters();
               return;
             }
-            rows = rows.filter(
-              (p) =>
-                (this.fEmail && p.apply_method === "email") ||
-                (this.fLink && p.apply_method === "link") ||
-                (this.fWw && p.apply_method === "ww"),
-            );
-            const col = this.sortCol,
-              dir = this.sortDir;
+            clearTimeout(this._semTimer);
+            this._semTimer = setTimeout(() => this.semQuery(), 300);
+          },
+          setSearchMode(mode) {
+            if (this.searchMode === mode) return;
+            this.searchMode = mode;
+            localStorage.setItem("goosehunt.searchMode", mode);
+            if (mode === "semantic") {
+              this.warmModel();
+              this.semQuery();
+            } else {
+              this._semCtl?.abort();
+              this.semScores = null;
+              this.semQ = "";
+              if (this.sortCol === "sem_score") {
+                this.sortCol = "score_resume";
+                this.sortDir = -1;
+              }
+              this.applyFilters();
+            }
+            this._mkPal();
+          },
+          async warmModel() {
+            // Empty query loads the model server-side without ranking anything.
+            const t = setTimeout(() => (this.semLoading = true), 700);
+            try {
+              await fetch("/api/search?q=");
+            } catch (_) {
+            } finally {
+              clearTimeout(t);
+              if (!this._semCtl) this.semLoading = false;
+            }
+          },
+          async semQuery() {
+            const q = this.search.trim();
+            this._semCtl?.abort();
+            if (q.length < 3) {
+              this._semCtl = null;
+              this.semScores = null;
+              this.semQ = "";
+              if (this.sortCol === "sem_score") {
+                this.sortCol = "score_resume";
+                this.sortDir = -1;
+              }
+              this.applyFilters();
+              return;
+            }
+            const ctl = new AbortController();
+            this._semCtl = ctl;
+            const t = setTimeout(() => (this.semLoading = true), 700);
+            try {
+              const r = await fetch("/api/search?q=" + encodeURIComponent(q), { signal: ctl.signal });
+              if (!r.ok) {
+                let detail = "Semantic search failed.";
+                try {
+                  detail = (await r.json()).detail || detail;
+                } catch (_) {}
+                throw new Error(detail);
+              }
+              const scores = await r.json();
+              if (ctl.signal.aborted) return;
+              this.semScores = scores;
+              this.semQ = q;
+              this.sortCol = "sem_score";
+              this.sortDir = -1;
+              this.applyFilters();
+            } catch (err) {
+              if (err?.name !== "AbortError") this.apiError = err?.message || "Semantic search failed.";
+            } finally {
+              clearTimeout(t);
+              if (this._semCtl === ctl) {
+                this._semCtl = null;
+                this.semLoading = false;
+              }
+            }
+          },
+
+          applyFilters() {
+            let rows = this.boardPostings;
+            rows.forEach((p) => this.computeTerm(p));
+
+            if (this.searchMode === "semantic") {
+              if (this.semScores && this.semQ) {
+                rows.forEach((p) => (p.sem_score = this.semScores[p.job_id] ?? null));
+                rows = rows
+                  // MiniLM cosine for a short query vs a long posting: relevant hits
+                  // sit around 0.25-0.5, niche queries rarely exceed 0.4.
+                  .filter((p) => p.sem_score != null && p.sem_score >= 0.2)
+                  .sort((a, b) => b.sem_score - a.sem_score)
+                  .slice(0, 60);
+              }
+            } else {
+              const q = this.search.trim().toLowerCase();
+              if (q) {
+                const fields = ["title", "org", "location", "region", "country", "arrangement", "level", "job_id", "summary", "responsibilities", "required_skills"];
+                rows = rows.filter((p) => fields.some((f) => (p[f] || "").toLowerCase().includes(q)));
+              }
+            }
+
+            if (this.fHideIgnored && !this.groups.status.sel.ignored) rows = rows.filter((p) => (p.status || "new") !== "ignored");
+            for (const g of Object.values(this.groups)) {
+              const on = Object.keys(g.sel).filter((k) => g.sel[k]);
+              if (!on.length) continue;
+              rows = rows.filter((p) => (g.match ? g.match(p, on) : on.includes(g.get(p))));
+            }
+            if (this.fMinPay) rows = rows.filter((p) => (p.comp_hourly == null ? this.fPayUnlisted : p.comp_hourly >= this.fMinPay));
+            if (this.fHasHistory) rows = rows.filter((p) => p.hires_total != null);
+            if (this.fCover === "yes") rows = rows.filter((p) => p.needs_cover_letter);
+            if (this.fCover === "no") rows = rows.filter((p) => !p.needs_cover_letter);
+            if (this.fMaxApps != null && this.fMaxApps !== "" && this.board === "full_cycle") rows = rows.filter((p) => p.apps_count != null && p.apps_count <= this.fMaxApps);
+            if (this.fMinOpen) rows = rows.filter((p) => (p.openings ?? 0) >= this.fMinOpen);
+            const now = Date.now();
+            if (this.fHideExpired) rows = rows.filter((p) => !(p.deadline_iso && new Date(p.deadline_iso) < now));
+            if (this.fDueDays) {
+              const cutoff = now + this.fDueDays * 86400000;
+              rows = rows.filter((p) => p.deadline_iso && new Date(p.deadline_iso) >= now && new Date(p.deadline_iso) <= cutoff);
+            }
+
+            const col = this.sortCol, dir = this.sortDir;
             this.filtered = [...rows].sort((a, b) => {
-              const av = a[col],
-                bv = b[col];
+              let av = a[col], bv = b[col];
+              if (typeof av === "string") av = av.toLowerCase();
+              if (typeof bv === "string") bv = bv.toLowerCase();
               if (av == null && bv == null) return 0;
               if (av == null) return 1;
               if (bv == null) return -1;
               return (av < bv ? -1 : av > bv ? 1 : 0) * dir;
             });
-            if (this.selId) {
-              this.selIdx = this.filtered.findIndex(
-                (p) => p.job_id === this.selId,
-              );
-            }
+            if (this.selId) this.selIdx = this.filtered.findIndex((p) => p.job_id === this.selId);
           },
 
           srt(col) {
-            this.sortCol === col
-              ? (this.sortDir *= -1)
-              : ((this.sortCol = col), (this.sortDir = -1));
+            this.sortCol === col ? (this.sortDir *= -1) : ((this.sortCol = col), (this.sortDir = col === "title" || col === "location" || col === "deadline_iso" ? 1 : -1));
             this.applyFilters();
           },
-
+          sortLabel() {
+            const m = {
+              score_resume: "resume match",
+              comp_score: "pay",
+              deadline_iso: "due date",
+              title: "title",
+              location: "location",
+              status: "status",
+              term_rank: `hired at term ${this.myTerm}`,
+              hires_total: "previous hires",
+              apps_count: "applicants",
+              rating_avg: "employer rating",
+              openings: "openings",
+              sem_score: "similarity",
+              score_software: "software score",
+              score_ai_ml: "AI/ML score",
+              score_firmware: "firmware score",
+              score_hardware: "hardware score",
+            };
+            return (m[this.sortCol] || this.sortCol) + (this.sortDir === -1 ? " ↓" : " ↑");
+          },
           sel(id, idx) {
             this.selId = id;
-            this.selIdx =
-              idx ?? this.filtered.findIndex((p) => p.job_id === id);
+            this.selIdx = idx ?? this.filtered.findIndex((p) => p.job_id === id);
+            this.$nextTick(() => {
+              if (this.$refs.dp) this.$refs.dp.scrollTop = 0;
+            });
           },
-
           arr(col) {
             if (this.sortCol !== col) return "↕";
             return this.sortDir === -1 ? "↓" : "↑";
           },
 
           onKey(e) {
-            // ⌘K / Ctrl+K — always fires
             if ((e.metaKey || e.ctrlKey) && e.key === "k") {
               e.preventDefault();
               this._openPal();
               return;
             }
-
-            // palette mode
             if (this.pal) {
               if (e.key === "Escape") {
                 e.preventDefault();
@@ -1959,23 +2356,19 @@
               }
               return;
             }
-
-            const inInput = ["INPUT", "TEXTAREA"].includes(
-              document.activeElement?.tagName,
-            );
+            const inInput = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName);
             const inSrch = document.activeElement === this.$refs.srch;
-
             if (!inInput && e.key === "/") {
               e.preventDefault();
               this.$refs.srch.focus();
               return;
             }
-            if (inSrch && e.key === "Escape") {
-              this.$refs.srch.blur();
+            if (e.key === "Escape") {
+              if (inSrch) this.$refs.srch.blur();
+              else if (this.selId) this.closeDrawer();
               return;
             }
             if (inInput) return;
-
             if (e.key === "j") {
               e.preventDefault();
               this._nav(1);
@@ -1985,49 +2378,39 @@
               this._nav(-1);
             }
             if (e.key === "c" && this.selId) this.cpId(this.selId);
-            if (e.key === "m" && this.selPosting?.apply_email)
-              this.cpEmail(this.selPosting.apply_email);
+            if (e.key === "m" && this.selPosting?.apply_email) this.cpEmail(this.selPosting.apply_email);
             if (e.key === "S") {
               e.preventDefault();
               this.srt("score_resume");
-            } // shift+s
+            }
             if (e.key === "P") {
               e.preventDefault();
               this.srt("comp_score");
-            } // shift+p
+            }
+            if (e.key === "f") {
+              e.preventDefault();
+              this.toggleFilters();
+            }
           },
-
           _nav(delta) {
             if (!this.filtered.length) return;
-            const next = Math.max(
-              0,
-              Math.min(this.filtered.length - 1, this.selIdx + delta),
-            );
+            const next = clamp(this.selIdx + delta, 0, this.filtered.length - 1);
             const p = this.filtered[next];
             if (!p) return;
-            this.selId = p.job_id;
-            this.selIdx = next;
+            this.sel(p.job_id, next);
             this.$nextTick(() => {
-              document
-                .getElementById("r" + p.job_id)
-                ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+              document.getElementById("r" + p.job_id)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
             });
           },
-
           cpId(id) {
             navigator.clipboard.writeText(id);
             this.cpId_ = id;
-            setTimeout(() => {
-              this.cpId_ = null;
-            }, 1500);
+            setTimeout(() => (this.cpId_ = null), 1500);
           },
-
           cpEmail(em) {
             navigator.clipboard.writeText(em);
             this.cpEmail_ = true;
-            setTimeout(() => {
-              this.cpEmail_ = false;
-            }, 1500);
+            setTimeout(() => (this.cpEmail_ = false), 1500);
           },
 
           // ── palette ────────────────────────────────────────────────
@@ -2037,241 +2420,54 @@
               fn();
               this.applyFilters();
             };
-            this.palAll = [
-              {
-                id: "sr",
-                cat: "sort",
-                label: "Sort by Resume score",
-                fn: s("score_resume"),
-              },
-              {
-                id: "sp",
-                cat: "sort",
-                label: "Sort by Pay",
-                fn: s("comp_score"),
-              },
-              {
-                id: "sap",
-                cat: "sort",
-                label: "Sort by applicants",
-                fn: s("apps_count"),
-              },
-              {
-                id: "sdl",
-                cat: "sort",
-                label: "Sort by Due",
-                fn: s("deadline_iso"),
-              },
-              {
-                id: "shr",
-                cat: "sort",
-                label: "Sort by previous hires",
-                fn: s("hires_total"),
-              },
-              {
-                id: "stp",
-                cat: "sort",
-                label: "Sort by hires at my term",
-                fn: s("term_pct"),
-              },
-              {
-                id: "sfw",
-                cat: "sort",
-                label: "Sort by Firmware score",
-                fn: s("score_firmware"),
-              },
-              {
-                id: "shw",
-                cat: "sort",
-                label: "Sort by Hardware score",
-                fn: s("score_hardware"),
-              },
-              {
-                id: "ssw",
-                cat: "sort",
-                label: "Sort by Software score",
-                fn: s("score_software"),
-              },
-              {
-                id: "sai",
-                cat: "sort",
-                label: "Sort by AI/ML score",
-                fn: s("score_ai_ml"),
-              },
-              {
-                id: "ffe",
-                cat: "filter",
-                label: "Toggle Email filter",
-                fn: f(() => (this.fEmail = !this.fEmail)),
-              },
-              {
-                id: "ffl",
-                cat: "filter",
-                label: "Toggle Link filter",
-                fn: f(() => (this.fLink = !this.fLink)),
-              },
-              {
-                id: "fww",
-                cat: "filter",
-                label: "Toggle WW filter",
-                fn: f(() => (this.fWw = !this.fWw)),
-              },
-              ...Object.keys(this.fDur).map((d) => ({
-                id: "fd" + d,
-                cat: "filter",
-                label: `Toggle ${d} month filter`,
-                fn: f(() => (this.fDur[d] = !this.fDur[d])),
-              })),
-              ...Object.keys(this.fArr).map((a) => ({
-                id: "fa" + a,
-                cat: "filter",
-                label: `Toggle ${a} filter`,
-                fn: f(() => (this.fArr[a] = !this.fArr[a])),
-              })),
-              ...Object.keys(this.fLvl).map((l) => ({
-                id: "fl" + l,
-                cat: "filter",
-                label: `Toggle ${l} level filter`,
-                fn: f(() => (this.fLvl[l] = !this.fLvl[l])),
-              })),
-              {
-                id: "fmt",
-                cat: "filter",
-                label: "Toggle Hires my term filter",
-                fn: f(() => (this.fMyTerm = !this.fMyTerm)),
-              },
-              {
-                id: "ffw",
-                cat: "filter",
-                label: "Toggle Firmware filter",
-                fn: f(() => (this.roles.firmware = !this.roles.firmware)),
-              },
-              {
-                id: "fhw",
-                cat: "filter",
-                label: "Toggle Hardware filter",
-                fn: f(() => (this.roles.hardware = !this.roles.hardware)),
-              },
-              {
-                id: "fsw",
-                cat: "filter",
-                label: "Toggle Software filter",
-                fn: f(() => (this.roles.software = !this.roles.software)),
-              },
-              {
-                id: "fai",
-                cat: "filter",
-                label: "Toggle AI/ML filter",
-                fn: f(() => (this.roles.ai_ml = !this.roles.ai_ml)),
-              },
-              {
-                id: "cid",
-                cat: "copy",
-                label: "Copy selected job ID",
-                fn: () => {
-                  if (this.selId) this.cpId(this.selId);
-                },
-              },
-              {
-                id: "cem",
-                cat: "copy",
-                label: "Copy apply email",
-                fn: () => {
-                  if (this.selPosting?.apply_email)
-                    this.cpEmail(this.selPosting.apply_email);
-                },
-              },
-              {
-                id: "clr",
-                cat: "filter",
-                label: "Clear all filters",
-                fn: f(() => {
-                  this.roleList.forEach((r) => (this.roles[r] = false));
-                  this.fEmail = true;
-                  this.fLink = true;
-                  this.fWw = true;
-                  [this.fDur, this.fArr, this.fLvl].forEach((g) =>
-                    Object.keys(g).forEach((k) => (g[k] = false)),
-                  );
-                  this.fMyTerm = false;
-                }),
-              },
-              {
-                id: "cls",
-                cat: "search",
-                label: "Clear search",
-                fn: f(() => {
-                  this.search = "";
-                }),
-              },
-              // keyboard shortcut reference — functional too
-              {
-                id: "kj",
-                cat: "keys",
-                label: "j  —  next posting",
-                fn: () => this._nav(1),
-              },
-              {
-                id: "kk",
-                cat: "keys",
-                label: "k  —  previous posting",
-                fn: () => this._nav(-1),
-              },
-              {
-                id: "ks",
-                cat: "keys",
-                label: "/  —  focus search",
-                fn: () => this.$refs.srch.focus(),
-              },
-              {
-                id: "kc",
-                cat: "keys",
-                label: "c  —  copy job ID",
-                fn: () => {
-                  if (this.selId) this.cpId(this.selId);
-                },
-              },
-              {
-                id: "km",
-                cat: "keys",
-                label: "m  —  copy apply email",
-                fn: () => {
-                  if (this.selPosting?.apply_email)
-                    this.cpEmail(this.selPosting.apply_email);
-                },
-              },
-              {
-                id: "kS",
-                cat: "keys",
-                label: "Shift+S  —  sort by resume score",
-                fn: () => this.srt("score_resume"),
-              },
-              {
-                id: "kP",
-                cat: "keys",
-                label: "Shift+P  —  sort by pay",
-                fn: () => this.srt("comp_score"),
-              },
+            const sorts = [
+              ["score_resume", "resume match"], ["comp_score", "pay"], ["deadline_iso", "due date"],
+              ["term_rank", "hired at my term"], ["hires_total", "previous hires"], ["rating_avg", "employer rating"],
+              ["apps_count", "applicants"], ["openings", "openings"],
+              ["score_software", "software score"], ["score_ai_ml", "AI/ML score"],
+              ["score_firmware", "firmware score"], ["score_hardware", "hardware score"],
             ];
-            this.palItems = [...this.palAll];
+            if (this.searchMode === "semantic") sorts.unshift(["sem_score", "similarity"]);
+            const items = sorts.map(([col, label]) => ({ id: "s:" + col, cat: "sort", label: "Sort by " + label, fn: s(col) }));
+            for (const [key, g] of Object.entries(this.groups)) {
+              if (g.derived) continue;
+              for (const o of g.opts) {
+                items.push({ id: `f:${key}:${o.v}`, cat: "filter", label: `Toggle ${g.label}: ${o.l}`, fn: f(() => (g.sel[o.v] = !g.sel[o.v])) });
+              }
+            }
+            items.push(
+              { id: "fcov", cat: "filter", label: "Toggle cover letter required", fn: f(() => (this.fCover = this.fCover === "yes" ? "any" : "yes")) },
+              { id: "fhist", cat: "filter", label: "Toggle has hired from Waterloo before", fn: f(() => (this.fHasHistory = !this.fHasHistory)) },
+              { id: "fexp", cat: "filter", label: "Toggle hide expired", fn: f(() => (this.fHideExpired = !this.fHideExpired)) },
+              { id: "fign", cat: "filter", label: "Toggle hide ignored postings", fn: f(() => (this.fHideIgnored = !this.fHideIgnored)) },
+              { id: "clr", cat: "filter", label: "Clear all filters", fn: () => this.clearFilters() },
+              { id: "cls", cat: "search", label: "Clear search", fn: () => { this.search = ""; this.onSearchInput(); } },
+              { id: "smode", cat: "search", label: this.searchMode === "semantic" ? "Switch to text search" : "Switch to semantic search", fn: () => this.setSearchMode(this.searchMode === "semantic" ? "text" : "semantic") },
+              { id: "vfil", cat: "view", label: this.filterOpen ? "Hide filters (f)" : "Show filters (f)", fn: () => this.toggleFilters() },
+              { id: "vclose", cat: "view", label: "Close posting (Esc)", fn: () => this.closeDrawer() },
+              { id: "vtheme", cat: "view", label: "Toggle day / night", fn: () => this.toggleTheme() },
+              { id: "cid", cat: "copy", label: "Copy selected job ID (c)", fn: () => { if (this.selId) this.cpId(this.selId); } },
+              { id: "cem", cat: "copy", label: "Copy apply email (m)", fn: () => { if (this.selPosting?.apply_email) this.cpEmail(this.selPosting.apply_email); } },
+              { id: "kj", cat: "keys", label: "j / k — next / previous posting", fn: () => this._nav(1) },
+              { id: "ks", cat: "keys", label: "/ — focus search", fn: () => this.$refs.srch.focus() },
+              { id: "kS", cat: "keys", label: "Shift+S — sort by resume match", fn: () => this.srt("score_resume") },
+              { id: "kP", cat: "keys", label: "Shift+P — sort by pay", fn: () => this.srt("comp_score") },
+            );
+            this.palAll = items;
+            this.palItems = [...items];
           },
-
           _openPal() {
+            this._mkPal();
             this.pal = true;
             this.palQ = "";
             this.palI = 0;
-            this.palItems = [...this.palAll];
             this.$nextTick(() => this.$refs.palIn?.focus());
           },
-
           palFilt() {
             const q = this.palQ.toLowerCase();
-            this.palItems = q
-              ? this.palAll.filter((i) => i.label.toLowerCase().includes(q))
-              : [...this.palAll];
+            this.palItems = q ? this.palAll.filter((i) => i.label.toLowerCase().includes(q)) : [...this.palAll];
             this.palI = 0;
           },
-
           palExec(item) {
             if (!item) return;
             this.pal = false;
@@ -2285,139 +2481,71 @@
             if (n < 0.15) return "color:var(--tx3)";
             if (n < 0.4) return "color:#6b7280";
             const light = this.theme === "day";
-            if (n < 0.65)
-              return light
-                ? "color:#166534;background:rgba(21,128,61,.08)"
-                : "color:hsl(142,48%,52%);background:rgba(34,197,94,.06)";
-            if (light)
-              return "color:#052e16;background:rgba(21,128,61,.14)";
+            if (n < 0.65) return light ? "color:#166534;background:rgba(21,128,61,.08)" : "color:hsl(142,48%,52%);background:rgba(34,197,94,.06)";
+            if (light) return "color:#052e16;background:rgba(21,128,61,.14)";
             return "color:hsl(142,68%,58%);background:rgba(34,197,94,.11)";
           },
-
-          scColor(val, isResume = false) {
-            return this.scStyle(val, isResume);
-          },
-
           fmtS(val) {
             return val == null ? "—" : val.toFixed(2);
           },
-
           fmtPay(h) {
-            if (h == null) return "—";
-            return "$" + h.toFixed(0) + "/h";
+            return h == null ? "—" : "$" + h.toFixed(0) + "/h";
           },
-
-          fmtPct(v) {
-            return v == null ? "—" : v.toFixed(0) + "%";
-          },
-
-          lvlLabel(l) {
-            return { Junior: "Jr", Intermediate: "Int", Senior: "Sr" }[l] || l;
-          },
-
-          metaExtras(p) {
-            const loc = [p.region, p.country].filter(Boolean).join(", ");
-            return [p.level, p.arrangement, p.work_term_duration, loc].filter(Boolean);
-          },
-
-          _pctList(obj, fmtKey = (k) => k) {
-            return Object.entries(obj || {})
-              .map(([k, v]) => `${fmtKey(k)} ${Number(v).toFixed(0)}%`)
-              .join(" · ");
-          },
-
-          facultyTip(p) {
-            if (p.hires_total == null) return "no hiring history";
-            return `${p.hires_total} previous hires\n${this._pctList(p.hires_by_faculty)}`;
-          },
-
-          termTip(p) {
-            if (p.hires_total == null) return "no hiring history";
-            return "by work term: " + this._pctList(p.hires_by_term, (k) => "T" + k);
-          },
-
-          ratingScore(avg) {
-            // Work term satisfaction /10: 7 → 0, 10 → 1 (all co-op average is ~8.5).
-            return Math.max(0, Math.min(1, (avg - 7) / 3));
-          },
-
-          hiringText(p) {
-            const lines = [`Previous Waterloo hires: ${p.hires_total}`];
-            if (p.rating_avg != null)
-              lines.push(
-                `Satisfaction: ${p.rating_avg}/10 from ${p.rating_count} ratings` +
-                  (p.rating_all_avg != null ? ` (all co-op: ${p.rating_all_avg})` : ""),
-              );
-            if (Object.keys(p.hires_by_term || {}).length)
-              lines.push("By work term: " + this._pctList(p.hires_by_term, (k) => "T" + k));
-            if (Object.keys(p.hires_by_faculty || {}).length)
-              lines.push("By faculty: " + this._pctList(p.hires_by_faculty));
-            if (p.top_programs?.length)
-              lines.push(
-                "Top programs: " +
-                  p.top_programs.map(([name, n]) => `${name} (${n})`).join(", "),
-              );
-            return lines.join("\n");
-          },
-
           fmtDue(iso) {
             if (!iso) return "—";
-            return new Date(iso).toLocaleDateString("en-CA", {
-              month: "short",
-              day: "numeric",
-            });
+            return new Date(iso).toLocaleDateString("en-CA", { month: "short", day: "numeric" });
           },
-
           fmtDueFull(iso) {
             if (!iso) return "—";
-            return new Date(iso).toLocaleDateString("en-CA", {
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-            });
+            return new Date(iso).toLocaleDateString("en-CA", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
           },
-
           isUrgent(iso) {
             if (!iso) return false;
             const d = (new Date(iso) - Date.now()) / 86400000;
             return d >= 0 && d <= 3;
           },
-
           rLabel(r) {
-            return (
-              {
-                software: "SWE",
-                ai_ml: "AI/ML",
-                firmware: "FW",
-                hardware: "HW",
-              }[r] || r
-            );
+            return { software: "SWE", ai_ml: "AI/ML", firmware: "FW", hardware: "HW" }[r] || r;
           },
-
           statusLabel(status) {
-            return (
-              {
-                new: "New",
-                maybe: "Maybe",
-                applied: "Applied",
-                ignored: "Ignored",
-              }[status || "new"] || "New"
-            );
+            return { new: "New", maybe: "Maybe", applied: "Applied", ignored: "Ignored" }[status || "new"] || "New";
           },
-
           kwCls(role) {
-            return (
-              {
-                firmware: "kw-fw",
-                hardware: "kw-hw",
-                software: "kw-sw",
-                ai_ml: "kw-fde",
-              }[role] || ""
-            );
+            return { firmware: "kw-fw", hardware: "kw-hw", software: "kw-sw", ai_ml: "kw-fde" }[role] || "";
           },
-
-          snip(txt) {
-            return txt ? txt.replace(/\n{3,}/g, "\n\n").trim() : "";
+          termGlyph(p) {
+            return ["✗", "–", "✓"][p.term_rank] || "–";
+          },
+          termCls(p) {
+            return ["term-no", "term-na", "term-yes"][p.term_rank] || "term-na";
+          },
+          termWord(p) {
+            if (p.term_rank === 2) return `Yes, ${p.term_pct}% of hires`;
+            if (p.term_rank === 0) return "No hires at this term";
+            return "No hiring history";
+          },
+          termTip(p) {
+            if (p.hires_total == null) return "No Waterloo hiring history for this employer";
+            return `${this.termWord(p)} (term ${this.myTerm}). By work term: ` + this.pctList(p.hires_by_term, (k) => "T" + k);
+          },
+          pctList(obj, fmtKey = (k) => k) {
+            return Object.entries(obj || {}).map(([k, v]) => `${fmtKey(k)} ${Number(v).toFixed(0)}%`).join(" · ");
+          },
+          facts(p) {
+            const out = [
+              { k: "Due", v: this.fmtDueFull(p.deadline_iso), cls: this.isUrgent(p.deadline_iso) ? "urg" : "" },
+              { k: "Pay", v: p.comp_hourly != null ? `$${p.comp_hourly.toFixed(2)}/hr est.` : "not listed" },
+              { k: "Location", v: [p.location, p.region].filter(Boolean).join(", ") || "—" },
+              { k: "Country", v: p.country || "—" },
+              { k: "Arrangement", v: p.arrangement || "—" },
+              { k: "Duration", v: p.work_term_duration || "—" },
+              { k: "Level", v: p.level || "—" },
+              { k: "Openings", v: p.openings ?? "—" },
+            ];
+            if (p.board_type === "full_cycle") out.push({ k: "Applicants", v: p.apps_count ?? "—" });
+            out.push({ k: `Hired at term ${this.myTerm}`, v: this.termWord(p), cls: p.term_rank === 2 ? "good" : "" });
+            if (p.rating_avg != null) out.push({ k: "Employer rating", v: `${p.rating_avg}/10 from ${p.rating_count}`, cls: p.rating_avg >= 8.5 ? "good" : "" });
+            return out;
           },
         };
       }

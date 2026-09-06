@@ -16,7 +16,7 @@ A personal tool for UWaterloo co-op students that turns WaterlooWorks job boards
 2. **Stores** every posting in a local SQLite database. Each run re-scrapes everything currently listed so deadlines stay current, and prunes postings that have dropped off the board (`--resume` picks a crashed scrape back up instead).
 3. **Classifies** each posting against four role types (SWE, AI/ML, firmware, hardware) using tunable keyword lists in `config/roles.yaml`.
 4. **Scores** each posting against your resume PDF using cosine similarity on sentence embeddings.
-5. **Serves** a local web UI — one page, all postings loaded, client-side sort/filter, keyboard navigation, no build step.
+5. **Serves** a local web UI — one page, all postings loaded, a filter sidebar, client-side sort, text or semantic search, keyboard navigation, no build step.
 
 ---
 

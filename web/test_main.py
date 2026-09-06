@@ -6,9 +6,20 @@ Run: pytest web/test_main.py -v
 """
 
 import json
+import sqlite3
 from pathlib import Path
 
-from web.main import extract_apply_info, extract_posting_attrs, extract_ratings
+import numpy as np
+from fastapi.testclient import TestClient
+
+import web.main as main
+from web.main import (
+    app,
+    extract_apply_info,
+    extract_posting_attrs,
+    extract_ratings,
+    rank_embeddings,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 RATINGS_SECTIONS = json.loads((FIXTURES / "ratings_sample.json").read_text())["sections"]
@@ -62,6 +73,14 @@ def test_attrs_missing_fields():
     assert attrs["levels"] == []
     assert attrs["documents_required"] == []
     assert attrs["needs_cover_letter"] is False
+    assert attrs["special_dates"] is None
+
+
+def test_special_dates():
+    attrs = extract_posting_attrs(raw(**{
+        "Special Work Term Start/End Date Considerations": "January 4 to April 30, 2027",
+    }))
+    assert attrs["special_dates"] == "January 4 to April 30, 2027"
 
 
 # ── extract_apply_info ────────────────────────────────────────────────────────
@@ -167,3 +186,65 @@ def test_ratings_absent():
 def test_ratings_ignores_malformed_sections():
     r = extract_ratings(raw(_ratings=["junk", {"type": "pieChart"}, {"type": "table", "title": "Hiring History"}]))
     assert r["hires_total"] is None
+
+
+# ── semantic search ───────────────────────────────────────────────────────────
+
+def _unit(i: int) -> np.ndarray:
+    v = np.zeros(384, dtype=np.float32)
+    v[i] = 1.0
+    return v
+
+
+def test_rank_embeddings_orders_by_cosine():
+    matrix = np.stack([_unit(0), _unit(1), (_unit(0) + _unit(1)) / np.sqrt(2)])
+    ranked = rank_embeddings(matrix, ["a", "b", "ab"], _unit(0) * 5)  # unnormalised query
+    assert [jid for jid, _ in ranked] == ["a", "ab", "b"]
+    assert ranked[0][1] == 1.0
+    assert abs(ranked[1][1] - 1 / np.sqrt(2)) < 1e-6
+    assert ranked[2][1] == 0.0
+
+
+def _make_db(path: Path, embeddings: dict[str, np.ndarray | None]) -> None:
+    schema = (Path(__file__).parent.parent / "db" / "schema.sql").read_text()
+    with sqlite3.connect(path) as conn:
+        conn.executescript(schema)
+        for jid, vec in embeddings.items():
+            conn.execute(
+                "INSERT INTO postings (job_id, title, embedding) VALUES (?, ?, ?)",
+                (jid, "t", vec.tobytes() if vec is not None else None),
+            )
+
+
+class _StubModel:
+    def encode(self, text, convert_to_numpy=True):
+        return _unit(1)
+
+
+def test_search_endpoint(tmp_path, monkeypatch):
+    db = tmp_path / "p.db"
+    diag = ((_unit(0) + _unit(1)) / np.sqrt(2)).astype(np.float32)
+    _make_db(db, {"a": _unit(0), "b": _unit(1), "c": diag})
+    monkeypatch.setattr(main, "DB_PATH", db)
+    monkeypatch.setattr(main, "_MATRIX_CACHE", None)
+    monkeypatch.setattr(main, "_get_model", lambda: _StubModel())
+    client = TestClient(app)
+
+    r = client.get("/api/search", params={"q": "anything"})
+    assert r.status_code == 200
+    body = r.json()
+    assert list(body) == ["b", "c", "a"]
+    assert body["b"] == 1.0 and body["a"] == 0.0
+
+    assert client.get("/api/search", params={"q": "   "}).json() == {}
+
+
+def test_search_endpoint_without_embeddings(tmp_path, monkeypatch):
+    db = tmp_path / "p.db"
+    _make_db(db, {"a": None})
+    monkeypatch.setattr(main, "DB_PATH", db)
+    monkeypatch.setattr(main, "_MATRIX_CACHE", None)
+    monkeypatch.setattr(main, "_get_model", lambda: _StubModel())
+    r = TestClient(app).get("/api/search", params={"q": "x"})
+    assert r.status_code == 503
+    assert "embed" in r.json()["detail"].lower()
