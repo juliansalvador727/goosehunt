@@ -223,6 +223,10 @@ TF-IDF rewards literal vocabulary overlap. Brittle for roles where titles vary w
 
 The full corpus fits in one JSON response (a few MB at most, embeddings excluded). Client-side filtering and sorting via Alpine.js is instant for this data size. Eliminating pagination removes complexity on both the server and client.
 
+### `/api/search`
+
+`GET /api/search?q=...` embeds the query with the same `all-MiniLM-L6-v2` model used for postings and returns `{job_id: cosine}` for every embedded posting, best first. The model is loaded lazily on the first call and kept for the life of the process (about 80 MB, 2–5 s to load, ~20 ms per query after that); the embedding matrix is cached and reloaded whenever the DB file's mtime changes. An empty `q` returns `{}` but still warms the model, which the UI uses when you switch to semantic mode. `make serve` runs uvicorn with `--reload`, so every file save drops the model and the next query pays the load again. `sentence_transformers` is imported inside the loader so server start and the test suite stay light.
+
 ### `/api/postings` response shape
 
 ```json
@@ -267,6 +271,7 @@ The full corpus fits in one JSON response (a few MB at most, embeddings excluded
     "hires_by_term": {"1": 12.5, "2": 25.0, "3": 37.5, "4": 25.0},
     "hires_by_faculty": {"Engineering": 35.0, "Mathematics": 65.0},
     "top_programs": [["Computer Science/BCS", 9], ["Computer Engineering", 4]],
+    "special_dates": "January 4 to April 30, 2027",
     "rating_avg": 8.7,
     "rating_count": 27,
     "rating_all_avg": 8.5,
@@ -304,7 +309,7 @@ Result is `comp_hourly` (est. $/hr). `comp_score` normalizes to [0, 1]: $16/hr �
 - `apply_email`: the `If By Email, Send To` field, else the first `mailto:` anchor, or null.
 - `apply_method`: `"email"` if delivery is by email or an email address is present; `"link"` if delivery is by website or any link was found; `"ww"` otherwise (apply through WaterlooWorks only).
 
-**Posting attributes** — straight from `raw_fields_json` labels: `work_term_duration` / `duration_months` (parsed from `Work Term Duration`, so `2 work term commitment` yields null), `arrangement` (`Employment Location Arrangement`), `level` / `levels` (`Level` split on whitespace, since WW joins multiple levels with tab/newline runs), `country`, `region`, `documents_required` (split on commas) and `needs_cover_letter`.
+**Posting attributes** — straight from `raw_fields_json` labels: `work_term_duration` / `duration_months` (parsed from `Work Term Duration`, so `2 work term commitment` yields null), `arrangement` (`Employment Location Arrangement`), `level` / `levels` (`Level` split on whitespace, since WW joins multiple levels with tab/newline runs), `country`, `region`, `documents_required` (split on commas), `needs_cover_letter`, and `special_dates` (`Special Work Term Start/End Date Considerations`).
 
 **Hiring history** — summarises `_ratings` (verified against live output, see `web/fixtures/ratings_sample.json`). Section titles are matched by lowercase prefix after stripping HTML (`<b>Hiring History</b>`) and the ` - Employer` suffix.
 
@@ -321,57 +326,36 @@ Employers with no report return `{"missingReportStructure": ...}`; the scraper s
 
 ### UI
 
-Two-pane layout: compact sortable table on the left, sticky detail panel on the right.
+Three regions: a resizable filter sidebar on the left, the job list, and a detail drawer that slides over the list from the right when a posting is selected. Both the sidebar and the drawer have a drag handle (double-click resets) and remember their width in `localStorage`.
 
-**Header controls:**
+**Topbar:** board picker (`Employer Direct` / `Full Cycle`; the UI opens on whichever board has data), delete-expired, Ctrl+K, day/night. When the sidebar is hidden a "Show filters" button appears here (`f` toggles it).
 
-- Board dropdown: `Employer Direct` (`board_type = "direct"`) and `Full Cycle` (`board_type = "full_cycle"`). Scrape with `make scrape BOARD=full_cycle` or `make run BOARD=full_cycle`.
-- Search box: instant client-side filter on title, org, location, summary, responsibilities, required skills, and job ID.
-- Role chips (SWE, AI/ML, FW, HW): toggle to show only postings with a non-zero score for that role. Multiple roles are OR'd.
-- Apply by chips (Email, Link, WW): filter by `apply_method` (`email`, `link`, or `ww`). All three are enabled by default.
-- Duration (4 mo / 8 mo), Arrangement (Remote / Hybrid / In-person), and Level (Jr / Int / Sr) chips: none checked means no filter; checked chips are OR'd within a group.
-- My term: a number input (persisted in `localStorage`) for your upcoming work term number. The "Hires my term" chip hides employers whose hiring history shows no past hires at that term number; employers with no hiring history at all are kept.
-- Posting count: shows `filtered / board total` for the selected board.
-- Ctrl+K button: opens the command palette.
-- Day/Night button: toggles the CSS variable palette and persists the selected theme in `localStorage`.
+**List toolbar:** the search box with a Text / Semantic toggle, a spinning search icon and "Loading model…" placeholder while the first semantic query warms the server (nothing reflows), a "Sorted by …" pill (click opens the palette), and the visible / total count.
 
-**Table:**
+- Text search matches title, org, location, region, country, arrangement, level, job ID, and the three description fields.
+- Semantic search sends the query to `/api/search` (debounced 300 ms, in-flight requests aborted), keeps postings with cosine similarity ≥ 0.2 (top 60), and sorts by similarity until another sort is chosen. Sidebar filters compose on top. Switching modes is remembered.
 
-- All columns sortable (click header). Default sort: `score_resume` desc.
-- Score cells color-coded: green tint scales with score, grey for null/zero.
-- Pay column: displays estimated hourly as `$26/h`; hover tooltip shows full `est. $26.49/hr`.
-- Hires column: previous Waterloo co-op hires for the employer division; tooltip shows the faculty split. `T<n>%` column: share of those hires who were in work term `n` (your "My term" value); tooltip shows the full breakdown. Both columns appear only when the board has ratings data.
-- Status column: displays the local workflow status (`New`, `Maybe`, `Applied`, or `Ignored`).
-- Job ID column: click to copy to clipboard.
+**Filter sidebar:** every group is a collapsible `<details>` with option counts for the current board. Checkbox groups come from one `groups` registry in `app()` that also drives the palette's toggle entries, the active-filter chips, and "Clear all", so a filter is declared once. One rule for every group: nothing checked means the group is not filtering; checked options are OR'd. Groups: Status (with a separate "Hide ignored postings" switch, on by default), Role, Apply by, Hired my term before (yes / hires but not my term / no history), Duration, Level, Arrangement, Country, Region (the last two derived from the data). "My work term" (segmented 1–8) sits at the top because it drives the T‹n› column and the term group. Other controls: min pay with "include unlisted", has hiring history, cover letter any / not required / required, max applicants (Full Cycle), min openings, due within N days, hide expired. Everything currently applied is repeated as removable chips in a row above the table, and an active group's heading turns blue.
+
+**Table:** Title with org underneath · Location · Due · Resume · role scores · Pay · Open · Apps (Full Cycle only) · T‹n› · Status. Fixed column widths, title takes the remaining space, and the table scrolls sideways below about 1040px. When the Role filter is active only the checked roles' score columns are shown. T‹n› is a tri-state: ✓ the employer's hiring history shows hires at your work term number, ✗ it has a history without any, – no history (the tooltip has the full breakdown). Any header sorts; palette sorts also cover fields not shown as columns (previous hires, rating, similarity).
+
+**Drawer:** sticky header with title, org, status buttons, and close. Then a facts grid (due, pay, location, country, arrangement, duration, level, openings, applicants, hired at my term, employer rating), the apply box (email with copy, every application link, or the WaterlooWorks fallback, plus required documents with the cover letter highlighted), a scores strip (resume, four roles, similarity when in semantic mode), matched keywords, then Summary / Responsibilities / Required skills as collapsible sections. WaterlooWorks emits list items as tab-indented lines; `renderPostingText()` turns those (and pasted bullet glyphs) into real paragraphs and nested lists, building DOM nodes only so no posting text is ever parsed as HTML. Hiring history follows (previous hires, satisfaction, a by-term bar strip with your term highlighted, faculties, top programs), then term-date notes and the job ID.
 
 **Keyboard shortcuts:**
 
-| Key      | Action                  |
-|----------|-------------------------|
-| `j` / `k` | Navigate rows          |
-| `/`      | Focus search            |
-| `Esc`    | Blur search             |
-| `c`      | Copy selected job ID    |
-| `m`      | Copy apply email        |
-| `Shift+S` | Sort by resume score   |
-| `Shift+P` | Sort by pay            |
-| `Ctrl+K` | Open command palette    |
+| Key      | Action                          |
+|----------|---------------------------------|
+| `j` / `k` | Next / previous posting (opens the drawer) |
+| `Esc`    | Close the drawer, or blur search |
+| `/`      | Focus search                    |
+| `f`      | Show / hide the filter sidebar  |
+| `c`      | Copy selected job ID            |
+| `m`      | Copy apply email                |
+| `Shift+S` | Sort by resume match           |
+| `Shift+P` | Sort by pay                    |
+| `Ctrl+K` | Command palette                 |
 
-**Detail panel:**
-
-- Title, company, location, due date, pay, level, arrangement, duration, and region/country in the header.
-- Local status buttons that PATCH `/api/postings/{job_id}/status`.
-- Score grid: one box per role + resume + pay, color-coded, plus the employer's work term satisfaction rating (/10) when WW reports one.
-- Apply row lists every application link found, or the apply email, or a WaterlooWorks fallback.
-- Apply row with one-click copy for email jobs or direct link for external applications.
-- WaterlooWorks-only postings, if surfaced by changing filters/UI, link back to the Employer Direct jobs page.
-- Documents chips (cover letter highlighted) and a text hiring-history block (total hires, by work term, by faculty, top programs).
-- Role-labeled keyword chips showing exactly which keywords fired and for which role.
-- Scrollable summary, responsibilities, and required skills sections.
-
-**Command palette (Ctrl+K):**
-
-Searchable list of all actions: sort by any column, toggle any filter, copy job ID/email, clear search and filters.
+**Command palette (Ctrl+K):** sorts, one toggle per filter option, cover letter / history / expired toggles, clear filters, clear search, switch search mode, show/hide filters, close posting, theme, copy actions, and the shortcut list.
 
 **Error states:**
 

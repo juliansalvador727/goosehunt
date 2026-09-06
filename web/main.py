@@ -3,9 +3,11 @@
 import json
 import re
 import sqlite3
+import threading
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 import yaml
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -361,6 +363,7 @@ def extract_posting_attrs(raw_json: str) -> dict:
         "region": (d.get("Region") or "").strip() or None,
         "documents_required": docs,
         "needs_cover_letter": any("cover letter" in x.lower() for x in docs),
+        "special_dates": (d.get("Special Work Term Start/End Date Considerations") or "").strip() or None,
     }
 
 
@@ -523,6 +526,88 @@ def get_postings() -> list[dict]:
         result.append(row)
 
     return result
+
+
+# ── Semantic search ───────────────────────────────────────────────────────────
+# Same model as embed/embed_postings.py. Not imported from there: that module pulls
+# torch in at import time, which would slow every server start and test run.
+MODEL_NAME = "all-MiniLM-L6-v2"
+_MODEL = None
+_MODEL_LOCK = threading.Lock()
+_MATRIX_CACHE: tuple[int, list[str], np.ndarray] | None = None  # (db mtime_ns, ids, matrix)
+
+
+def _get_model():
+    """Load the sentence-transformer once per process (lazy, thread-safe)."""
+    global _MODEL
+    with _MODEL_LOCK:
+        if _MODEL is None:
+            from sentence_transformers import SentenceTransformer
+            _MODEL = SentenceTransformer(MODEL_NAME)
+        return _MODEL
+
+
+def load_embedding_matrix(conn: sqlite3.Connection) -> tuple[list[str], np.ndarray]:
+    rows = conn.execute(
+        "SELECT job_id, embedding FROM postings WHERE embedding IS NOT NULL"
+    ).fetchall()
+    ids = [r[0] for r in rows]
+    if not rows:
+        return ids, np.zeros((0, 384), dtype=np.float32)
+    matrix = np.stack([np.frombuffer(r[1], dtype=np.float32) for r in rows])
+    norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+    return ids, matrix / np.where(norms == 0, 1, norms)
+
+
+def _get_matrix() -> tuple[list[str], np.ndarray]:
+    """Embeddings for all postings, reloaded whenever the DB file changes."""
+    global _MATRIX_CACHE
+    mtime = DB_PATH.stat().st_mtime_ns
+    if _MATRIX_CACHE is None or _MATRIX_CACHE[0] != mtime:
+        with sqlite3.connect(DB_PATH) as conn:
+            ids, matrix = load_embedding_matrix(conn)
+        _MATRIX_CACHE = (mtime, ids, matrix)
+    return _MATRIX_CACHE[1], _MATRIX_CACHE[2]
+
+
+def rank_embeddings(matrix: np.ndarray, ids: list[str], qvec) -> list[tuple[str, float]]:
+    """Cosine similarity of every row against qvec, best first."""
+    q = np.asarray(qvec, dtype=np.float32)
+    norm = np.linalg.norm(q)
+    if norm:
+        q = q / norm
+    scores = matrix @ q
+    order = np.argsort(-scores)
+    return [(ids[i], float(scores[i])) for i in order]
+
+
+@app.get("/api/search")
+def semantic_search(q: str = "") -> dict[str, float]:
+    """Rank postings by semantic similarity to q. Empty q only warms the model."""
+    if not DB_PATH.exists():
+        raise HTTPException(
+            status_code=503,
+            detail="Postings database not found. Run `make scrape && make pipeline` first.",
+        )
+    try:
+        ids, matrix = _get_matrix()
+    except sqlite3.OperationalError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Postings database is not initialized. Run `make ingest` or `make pipeline` first.",
+        ) from exc
+    if not ids:
+        raise HTTPException(
+            status_code=503,
+            detail="No posting embeddings yet. Run `make embed` or `make pipeline` first.",
+        )
+    model = _get_model()
+    q = q.strip()
+    if not q:
+        return {}
+    with _MODEL_LOCK:
+        vec = model.encode(q, convert_to_numpy=True)
+    return {job_id: round(score, 4) for job_id, score in rank_embeddings(matrix, ids, vec)}
 
 
 @app.patch("/api/postings/{job_id}/status")
