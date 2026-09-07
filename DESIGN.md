@@ -18,7 +18,7 @@ WaterlooWorks renders postings via JavaScript — raw HTTP won't give you postin
 
 WaterlooWorks exposes several global functions on the jobs page that the scraper calls directly:
 
-**`window.getPostingOverview(postingId, callback)`** — fires a `$.post` to `/myAccount/co-op/direct/jobs.htm` with the posting's action key and returns the full posting HTML via callback. No new tab is opened.
+**`window.getPostingOverview(postingId, callback)`** — fires a `$.post` to `/myAccount/co-op/direct/jobs.htm` with the posting's action key and returns the full posting HTML via callback. No per-posting tab is opened.
 
 **`window.getPostingData(postingId, callback)`** — returns `{org, div, divId, geoData, ...}`. Only `divId` is used: it keys the employer's work term ratings report.
 
@@ -75,7 +75,7 @@ FIELD_MAP = {
 
 `data/postings.jsonl` is append-only. On each run `load_done()` reads all existing job IDs from it; any ID already present is skipped. A crashed scrape loses at most one posting.
 
-The scraper starts from the currently visible WaterlooWorks listing page. Work term, board, and any other WW filters must be set manually before pressing Enter.
+The scraper starts the WaterlooWorks login flow using a persistent Chromium profile. It loads credentials from the git-ignored `.env` file and fills them only on the exact UWaterloo ADFS host; Duo remains interactive. It detects the authenticated `/myAccount` redirect, navigates directly to the configured Employer-Student Direct or Full-Cycle Service route, and clicks the board's **ALL JOBS** control without a terminal handoff. Missing `.env` values fall back to manual login.
 
 Because `data/postings.jsonl` is the scraper's skip list, parser improvements do not refresh already-scraped jobs automatically. To force a full refresh after changing HTML parsing or field mapping, move the old JSONL aside before scraping:
 
@@ -89,13 +89,15 @@ make score
 
 `--force` matters because changed posting text should replace existing embedding BLOBs. Local `status` values live in SQLite and are preserved by ingest.
 
-### Politeness
+### Request pacing
 
-```python
-await asyncio.sleep(random.uniform(0.8, 1.2))
-```
-
-Single-threaded, no concurrent requests. ~1s random delay between postings. Manual login at startup — no credential storage in code.
+Listing pagination is sequential with no fixed delay between page requests.
+Posting details use five concurrent workers on the same authenticated page by
+default, with a shared work queue and no delay between postings; `--workers N`
+controls the pool size. A partial final listing page is processed afterward by
+one worker. Credentials are submitted only once per expired session. JSONL writes are serialized,
+and ratings requests share a cross-worker division cache. Manual login at startup
+— no credential storage in code.
 
 ---
 

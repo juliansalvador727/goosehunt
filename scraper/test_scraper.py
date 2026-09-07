@@ -5,27 +5,381 @@ No browser, no network required.
 Run: pytest scraper/test_scraper.py -v
 """
 
+import asyncio
 import json
 from pathlib import Path
 
 import pytest
+import scraper.scraper as scraper_module
 
 from scraper.scraper import (
     BOARDS,
+    DEFAULT_WORKERS,
     MAX_LISTING_PAGES,
     MAX_NO_NEW_PAGES,
     build_row,
     extract_ids_from_html,
     extract_page_ids,
+    fetch_ratings,
+    load_login_credentials,
+    navigate_to_board,
+    parse_args,
     parse_list_rows,
     parse_list_rows_from_json,
     parse_table_rows,
     pick_field,
+    scrape_jobs,
     should_stop_collecting,
+    submit_adfs_login,
+    wait_for_authenticated_page,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
 FULL_CYCLE_LIST_HTML = (FIXTURES / "full_cycle_list.html").read_text(encoding="utf-8")
+
+
+# ── CLI / workers ─────────────────────────────────────────────────────────────
+
+def test_parse_args_defaults_to_five_workers():
+    assert parse_args([]).workers == DEFAULT_WORKERS == 5
+
+
+def test_parse_args_accepts_worker_override():
+    assert parse_args(["--workers", "5"]).workers == 5
+
+
+@pytest.mark.parametrize(
+    ("board", "path"),
+    [
+        ("direct", "/myAccount/co-op/direct/jobs.htm"),
+        ("full_cycle", "/myAccount/co-op/full/jobs.htm"),
+    ],
+)
+def test_board_routes_match_waterlooworks(board, path):
+    assert BOARDS[board].url.endswith(path)
+
+
+def test_navigate_to_board_opens_configured_url():
+    class FakePage:
+        url = "https://waterlooworks.uwaterloo.ca/myAccount/dashboard.htm"
+
+        def __init__(self):
+            self.goto_calls = []
+            self.selector_calls = []
+            self.all_jobs = FakeAllJobs()
+
+        def get_by_text(self, pattern):
+            assert pattern.pattern == scraper_module.ALL_JOBS_PATTERN.pattern
+            return self.all_jobs
+
+        async def goto(self, url, **kwargs):
+            self.url = url
+            self.goto_calls.append((url, kwargs))
+
+        async def wait_for_load_state(self, state, **kwargs):
+            pass
+
+        async def wait_for_selector(self, selector, **kwargs):
+            self.selector_calls.append((selector, kwargs))
+
+    class FakeAllJobs:
+        def __init__(self):
+            self.waited = False
+            self.clicked = False
+
+        @property
+        def first(self):
+            return self
+
+        async def wait_for(self, **kwargs):
+            self.waited = True
+
+        async def click(self):
+            self.clicked = True
+
+    page = FakePage()
+    asyncio.run(navigate_to_board(page, BOARDS["full_cycle"]))
+
+    assert page.goto_calls == [(BOARDS["full_cycle"].url, {"wait_until": "domcontentloaded"})]
+    assert page.all_jobs.waited is True
+    assert page.all_jobs.clicked is True
+    assert page.selector_calls[0][0] == scraper_module.LISTING_READY_SELECTOR
+
+
+def test_load_login_credentials_from_environment(monkeypatch):
+    monkeypatch.setenv("WATERLOOWORKS_EMAIL", "student@uwaterloo.ca")
+    monkeypatch.setenv("WATERLOOWORKS_PASSWORD", "test-password")
+
+    assert load_login_credentials() == ("student@uwaterloo.ca", "test-password")
+
+
+def test_submit_adfs_login_fills_and_submits_credentials():
+    class FakeLocator:
+        def __init__(self):
+            self.value = None
+            self.clicked = False
+
+        @property
+        def first(self):
+            return self
+
+        async def wait_for(self, **kwargs):
+            pass
+
+        async def fill(self, value):
+            self.value = value
+
+        async def is_visible(self):
+            return True
+
+        async def press(self, key):
+            raise AssertionError("Enter fallback should not be needed")
+
+        async def click(self):
+            self.clicked = True
+
+    class FakePage:
+        url = "https://adfs.uwaterloo.ca/adfs/ls/"
+
+        def __init__(self):
+            self.fields = {
+                scraper_module.ADFS_USERNAME_SELECTOR: FakeLocator(),
+                scraper_module.ADFS_PASSWORD_SELECTOR: FakeLocator(),
+                scraper_module.ADFS_NEXT_SELECTOR: FakeLocator(),
+                scraper_module.ADFS_SUBMIT_SELECTOR: FakeLocator(),
+            }
+
+        def locator(self, selector):
+            return self.fields[selector]
+
+    page = FakePage()
+    submitted = asyncio.run(submit_adfs_login(
+        page, "student@uwaterloo.ca", "test-password",
+    ))
+
+    assert submitted is True
+    assert page.fields[scraper_module.ADFS_USERNAME_SELECTOR].value == "student@uwaterloo.ca"
+    assert page.fields[scraper_module.ADFS_PASSWORD_SELECTOR].value == "test-password"
+    assert page.fields[scraper_module.ADFS_SUBMIT_SELECTOR].clicked is True
+
+
+def test_submit_adfs_login_never_fills_another_host():
+    class UnexpectedPage:
+        url = "https://example.com/login"
+
+        def locator(self, selector):
+            raise AssertionError("credentials must not be exposed to another host")
+
+    assert asyncio.run(submit_adfs_login(
+        UnexpectedPage(), "student@uwaterloo.ca", "test-password",
+    )) is False
+
+
+def test_submit_adfs_login_advances_two_stage_form():
+    class FakeField:
+        def __init__(self, visible):
+            self.visible = visible
+            self.value = None
+
+        @property
+        def first(self):
+            return self
+
+        async def wait_for(self, **kwargs):
+            assert self.visible
+
+        async def is_visible(self):
+            return self.visible
+
+        async def fill(self, value):
+            assert self.visible
+            self.value = value
+
+        async def press(self, key):
+            raise AssertionError("the visible Next control should be clicked")
+
+    class FakeButton(FakeField):
+        def __init__(self, on_click=None):
+            super().__init__(visible=True)
+            self.clicked = False
+            self.on_click = on_click
+
+        async def click(self):
+            self.clicked = True
+            if self.on_click:
+                self.on_click()
+
+    username = FakeField(visible=True)
+    password = FakeField(visible=False)
+    next_button = FakeButton(on_click=lambda: setattr(password, "visible", True))
+    submit_button = FakeButton()
+
+    class FakePage:
+        url = "https://adfs.uwaterloo.ca/adfs/ls/"
+        fields = {
+            scraper_module.ADFS_USERNAME_SELECTOR: username,
+            scraper_module.ADFS_PASSWORD_SELECTOR: password,
+            scraper_module.ADFS_NEXT_SELECTOR: next_button,
+            scraper_module.ADFS_SUBMIT_SELECTOR: submit_button,
+        }
+
+        def locator(self, selector):
+            return self.fields[selector]
+
+    submitted = asyncio.run(submit_adfs_login(
+        FakePage(), "student@uwaterloo.ca", "test-password",
+    ))
+
+    assert submitted is True
+    assert username.value == "student@uwaterloo.ca"
+    assert next_button.clicked is True
+    assert password.value == "test-password"
+    assert submit_button.clicked is True
+
+
+def test_wait_for_authenticated_page_detects_dashboard_redirect():
+    class FakePage:
+        url = "https://adfs.uwaterloo.ca/adfs/ls/"
+
+    class FakeContext:
+        pages = [FakePage()]
+
+    async def exercise():
+        async def redirect():
+            await asyncio.sleep(0.01)
+            FakeContext.pages[0].url = (
+                "https://waterlooworks.uwaterloo.ca/myAccount/dashboard.htm"
+            )
+
+        redirect_task = asyncio.create_task(redirect())
+        page = await wait_for_authenticated_page(FakeContext(), timeout_ms=1_000)
+        await redirect_task
+        return page
+
+    page = asyncio.run(exercise())
+    assert page.url.endswith("/myAccount/dashboard.htm")
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "nope"])
+def test_parse_args_rejects_invalid_worker_count(value):
+    with pytest.raises(SystemExit):
+        parse_args(["--workers", value])
+
+
+def test_scrape_jobs_runs_three_workers_concurrently_on_one_page(monkeypatch):
+    active = 0
+    peak = 0
+    written = []
+    pages_seen = []
+
+    async def fake_fetch_overview(page, job_id):
+        nonlocal active, peak
+        pages_seen.append(page)
+        active += 1
+        peak = max(peak, active)
+        await asyncio.sleep(0.01)
+        active -= 1
+        return f"overview-{job_id}"
+
+    async def fake_parse_overview(page, html):
+        return {"Job Title": html}
+
+    monkeypatch.setattr(scraper_module, "fetch_overview_with_retry", fake_fetch_overview)
+    monkeypatch.setattr(scraper_module, "parse_overview_html", fake_parse_overview)
+    monkeypatch.setattr(scraper_module, "append_output", written.append)
+
+    todo = [str(job_id) for job_id in range(1, 7)]
+    shared_page = object()
+    scraped, failed = asyncio.run(scrape_jobs(
+        shared_page,
+        3,
+        todo,
+        {},
+        BOARDS["direct"],
+        ratings=False,
+    ))
+
+    assert peak == 3
+    assert all(page is shared_page for page in pages_seen)
+    assert scraped == len(todo)
+    assert failed == []
+    assert {row["job_id"] for row in written} == set(todo)
+
+
+def test_scrape_jobs_uses_one_worker_for_partial_final_page(monkeypatch):
+    active = 0
+    parallel_peak = 0
+    tail_peak = 0
+    tail_ids = {"6", "7", "8"}
+
+    async def fake_fetch_overview(page, job_id):
+        nonlocal active, parallel_peak, tail_peak
+        active += 1
+        if job_id in tail_ids:
+            tail_peak = max(tail_peak, active)
+        else:
+            parallel_peak = max(parallel_peak, active)
+        await asyncio.sleep(0.01)
+        active -= 1
+        return f"overview-{job_id}"
+
+    async def fake_parse_overview(page, html):
+        return {"Job Title": html}
+
+    monkeypatch.setattr(scraper_module, "fetch_overview_with_retry", fake_fetch_overview)
+    monkeypatch.setattr(scraper_module, "parse_overview_html", fake_parse_overview)
+    monkeypatch.setattr(scraper_module, "append_output", lambda row: None)
+
+    todo = [str(job_id) for job_id in range(1, 9)]
+    scraped, failed = asyncio.run(scrape_jobs(
+        object(),
+        5,
+        todo,
+        {},
+        BOARDS["direct"],
+        ratings=False,
+        single_worker_ids=tail_ids,
+    ))
+
+    assert parallel_peak == 5
+    assert tail_peak == 1
+    assert scraped == 8
+    assert failed == []
+
+
+def test_fetch_ratings_deduplicates_concurrent_division_requests(monkeypatch):
+    requests = 0
+
+    async def fake_posting_data(page, job_id):
+        return {"divId": 42}
+
+    async def fake_work_term_ratings(page, div_id):
+        nonlocal requests
+        requests += 1
+        await asyncio.sleep(0.01)
+        return {"sections": [{"title": "Shared employer"}]}
+
+    monkeypatch.setattr(scraper_module, "get_posting_data", fake_posting_data)
+    monkeypatch.setattr(scraper_module, "get_work_term_ratings", fake_work_term_ratings)
+
+    async def exercise():
+        cache = {}
+        inflight = {}
+        lock = asyncio.Lock()
+        return await asyncio.gather(*(
+            fetch_ratings(
+                object(),
+                str(job_id),
+                cache,
+                inflight=inflight,
+                cache_lock=lock,
+            )
+            for job_id in range(3)
+        ))
+
+    results = asyncio.run(exercise())
+    assert requests == 1
+    assert all(result == [{"title": "Shared employer"}] for result in results)
 
 
 # ── parse_table_rows ──────────────────────────────────────────────────────────

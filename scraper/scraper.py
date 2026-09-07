@@ -6,7 +6,7 @@ Uses WW's in-page JS API (credit: bryanling1/waterlooworks-scraper):
   1. Extract the 'action' key embedded in the page's JS.
   2. POST to the listing endpoint (page size from WW UI, usually 50) to collect job IDs + list metadata.
   3. Call window.getPostingOverview(jobId, cb) for each job → HTML string.
-  4. Parse HTML in-memory; no new tabs opened.
+  4. Parse HTML in-memory with concurrent workers sharing one authenticated page.
   5. Call window.getPostingData(jobId, cb) → {divId, ...}, then
      window.getWorkTermRatingReportJson(divId, cb) → {sections: [...]} for the
      employer's work term ratings tab (cached per division within a run).
@@ -14,6 +14,7 @@ Uses WW's in-page JS API (credit: bryanling1/waterlooworks-scraper):
 Usage:
   python -m scraper.scraper --board direct       # Employer Direct (default)
   python -m scraper.scraper --board full_cycle   # Full Cycle Service
+  python -m scraper.scraper --workers 5          # five shared-page workers (default)
   python -m scraper.scraper --probe-ratings 10   # dump ratings JSON for 10 jobs, no scrape
 """
 
@@ -22,30 +23,40 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import random
+import os
 import re
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
+from dotenv import load_dotenv
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import async_playwright
 
 LISTING_READY_SELECTOR = (
-    "table.data-viewer-table, "
-    "input[name='dataViewerSelection'], "
-    "tr.table__row--body"
+    "table.data-viewer-table:visible, "
+    "input[name='dataViewerSelection']:visible, "
+    "tr.table__row--body:visible"
 )
+ALL_JOBS_PATTERN = re.compile(r"^\s*ALL JOBS\s*$", re.IGNORECASE)
 
 ROOT = Path(__file__).parent.parent
 PROFILE_DIR = Path(__file__).parent / "profile"
 DATA_DIR = ROOT / "data"
 OUTPUT_FILE = DATA_DIR / "postings.jsonl"
-
-# WW listing grid needs time to render after pagination clicks
-PAGE_NAV_DELAY_MIN_S = 3.0
-PAGE_NAV_DELAY_MAX_S = 5.0
+LOGIN_URL = "https://waterlooworks.uwaterloo.ca/waterloo.htm?action=login"
+WATERLOOWORKS_HOST = "waterlooworks.uwaterloo.ca"
+ADFS_HOST = "adfs.uwaterloo.ca"
+ADFS_USERNAME_SELECTOR = (
+    "#userNameInput, input[name='UserName'], input[autocomplete='username']"
+)
+ADFS_PASSWORD_SELECTOR = (
+    "#passwordInput, input[name='Password'], input[autocomplete='current-password']"
+)
+ADFS_NEXT_SELECTOR = "#nextButton"
+ADFS_SUBMIT_SELECTOR = "#submitButton, button[type='submit'], input[type='submit']"
 
 # Pagination safety limits (see should_stop_collecting)
 MAX_NO_NEW_PAGES = 2      # stop after this many consecutive pages with no new IDs
@@ -54,12 +65,15 @@ MAX_LISTING_PAGES = 200   # hard cap so a broken pager can't loop forever
 # Detail-fetch retry policy
 DETAIL_FETCH_RETRIES = 3
 DETAIL_FETCH_RETRY_DELAY_S = 2.0
+DEFAULT_WORKERS = 5
+LOGIN_TIMEOUT_MS = 5 * 60_000
 
 
 @dataclass(frozen=True)
 class BoardConfig:
     board_type: str
     label: str
+    url: str
     list_columns: tuple[str, ...]
 
 
@@ -67,6 +81,7 @@ BOARDS: dict[str, BoardConfig] = {
     "direct": BoardConfig(
         board_type="direct",
         label="Employer Direct",
+        url="https://waterlooworks.uwaterloo.ca/myAccount/co-op/direct/jobs.htm",
         list_columns=(
             "work_term", "title", "org", "division", "openings",
             "location", "level", "deadline",
@@ -75,6 +90,7 @@ BOARDS: dict[str, BoardConfig] = {
     "full_cycle": BoardConfig(
         board_type="full_cycle",
         label="Full Cycle Service",
+        url="https://waterlooworks.uwaterloo.ca/myAccount/co-op/full/jobs.htm",
         list_columns=(
             "title", "org", "division", "openings", "location",
             "level", "apps_count", "deadline",
@@ -105,6 +121,16 @@ _LIST_KEY_ALIASES: dict[str, str] = {
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
+def positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a positive integer") from exc
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return parsed
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Scrape WaterlooWorks job postings.")
     parser.add_argument(
@@ -112,6 +138,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=sorted(BOARDS.keys()),
         default="direct",
         help="Which WW board to scrape (default: direct)",
+    )
+    parser.add_argument(
+        "--workers",
+        type=positive_int,
+        default=DEFAULT_WORKERS,
+        metavar="N",
+        help=(
+            f"Number of concurrent workers sharing the authenticated page "
+            f"(default: {DEFAULT_WORKERS})."
+        ),
     )
     parser.add_argument(
         "--resume",
@@ -612,6 +648,115 @@ async def wait_for_listing_ready(page, timeout_ms: int = 60_000) -> None:
     print("[SCRAPER] Listings ready.\n")
 
 
+async def navigate_to_board(page, config: BoardConfig) -> None:
+    """Open the selected authenticated job board and wait for its listing grid."""
+    print(f"[SCRAPER] Opening {config.label}...")
+    await page.goto(config.url, wait_until="domcontentloaded")
+    try:
+        all_jobs = page.get_by_text(ALL_JOBS_PATTERN).first
+        await all_jobs.wait_for(state="visible", timeout=60_000)
+        await all_jobs.click()
+        print("[SCRAPER] Selected ALL JOBS.")
+        await wait_for_listing_ready(page)
+    except PlaywrightError as exc:
+        raise RuntimeError(
+            f"Could not select ALL JOBS on {config.label}. The current page is "
+            f"{page.url!r}. Confirm that login/Duo completed and that your account "
+            "has access to this board."
+        ) from exc
+
+
+def load_login_credentials() -> tuple[str, str] | None:
+    """Load local WaterlooWorks credentials without logging their values."""
+    load_dotenv(ROOT / ".env")
+    email = os.getenv("WATERLOOWORKS_EMAIL", "").strip()
+    password = os.getenv("WATERLOOWORKS_PASSWORD", "")
+    if not email or not password:
+        return None
+    return email, password
+
+
+async def submit_adfs_login(page, email: str, password: str) -> bool:
+    """Fill the UWaterloo ADFS form, but never send credentials to another host."""
+    if (urlparse(page.url).hostname or "").lower() != ADFS_HOST:
+        await write_login_diagnostic(page, "unexpected-host")
+        return False
+
+    username_field = page.locator(ADFS_USERNAME_SELECTOR).first
+    password_field = page.locator(ADFS_PASSWORD_SELECTOR).first
+    try:
+        await username_field.wait_for(state="visible", timeout=15_000)
+        await username_field.fill(email)
+        if not await password_field.is_visible():
+            next_button = page.locator(ADFS_NEXT_SELECTOR).first
+            if await next_button.is_visible():
+                await next_button.click()
+            else:
+                await username_field.press("Enter")
+        await password_field.wait_for(state="visible", timeout=15_000)
+    except PlaywrightError:
+        await write_login_diagnostic(page, "form-not-found")
+        return False
+
+    await password_field.fill(password)
+    await page.locator(ADFS_SUBMIT_SELECTOR).first.click()
+    print("[SCRAPER] Waterloo credentials submitted; complete Duo if prompted.")
+    return True
+
+
+async def write_login_diagnostic(page, reason: str) -> None:
+    """Save form metadata without field values or URL query parameters."""
+    try:
+        parsed_url = urlparse(page.url)
+        elements = await page.evaluate(r"""
+            () => [...document.querySelectorAll('input, button, [role="button"], [id]')]
+            .filter((element, index, all) => all.indexOf(element) === index)
+            .map((element) => {
+                const style = getComputedStyle(element);
+                const rect = element.getBoundingClientRect();
+                return {
+                tag: element.tagName.toLowerCase(),
+                id: element.id || '',
+                name: element.getAttribute('name') || '',
+                type: element.getAttribute('type') || '',
+                role: element.getAttribute('role') || '',
+                autocomplete: element.getAttribute('autocomplete') || '',
+                placeholder: element.getAttribute('placeholder') || '',
+                aria_label: element.getAttribute('aria-label') || '',
+                visible: style.display !== 'none'
+                    && style.visibility !== 'hidden'
+                    && rect.width > 0 && rect.height > 0,
+                text: element.matches('button, [role="button"]')
+                    ? (element.textContent || '').trim().slice(0, 100)
+                    : '',
+                };
+            })
+        """)
+        DATA_DIR.mkdir(exist_ok=True)
+        path = DATA_DIR / "login_diagnostic.json"
+        path.write_text(json.dumps({
+            "reason": reason,
+            "url": f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}",
+            "title": await page.title(),
+            "elements": elements,
+        }, indent=2))
+        print(f"[SCRAPER] Login form not detected; diagnostic written to {path}.")
+    except Exception:
+        pass
+
+
+async def wait_for_login_destination(page, timeout_ms: int = 15_000) -> None:
+    """Allow the WaterlooWorks login endpoint to finish redirecting to ADFS."""
+    destination = re.compile(
+        r"^https://(?:adfs\.uwaterloo\.ca/|waterlooworks\.uwaterloo\.ca/myAccount)",
+        re.IGNORECASE,
+    )
+    try:
+        await page.wait_for_url(destination, wait_until="domcontentloaded", timeout=timeout_ms)
+    except PlaywrightError:
+        pass
+
+
 async def evaluate_retry(
     page,
     expression: str,
@@ -648,34 +793,50 @@ async def evaluate_retry(
     return None
 
 
-async def wait_for_login(ctx, config: BoardConfig):
+async def wait_for_authenticated_page(ctx, timeout_ms: int = LOGIN_TIMEOUT_MS):
+    """Return the WaterlooWorks account tab as soon as authentication completes."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout_ms / 1000
+    while loop.time() < deadline:
+        for candidate in reversed(ctx.pages):
+            parsed_url = urlparse(candidate.url)
+            if (
+                (parsed_url.hostname or "").lower() == WATERLOOWORKS_HOST
+                and parsed_url.path.lower().startswith("/myaccount")
+            ):
+                return candidate
+        await asyncio.sleep(0.25)
+    raise RuntimeError(
+        "WaterlooWorks login did not reach the account dashboard within "
+        f"{timeout_ms // 1000} seconds. Complete Duo and try again."
+    )
+
+
+async def wait_for_login(
+    ctx,
+    config: BoardConfig,
+    credentials: tuple[str, str] | None,
+    login_submitted: bool,
+):
     print()
     print("=" * 60)
-    print("  MANUAL STEP REQUIRED")
+    print("  LOGIN CHECK")
     print("=" * 60)
-    print("  1. Log in to WaterlooWorks (Duo if prompted).")
-    print(f"  2. Go to the {config.label} board.")
-    print("  3. Set ALL filters (work term, etc.).")
-    print("  4. Make sure job listings are visible on screen.")
-    print()
-    print("  !! Do NOT press Enter until your filtered")
-    print("  !! results are on screen — scraper starts from here.")
-    print("=" * 60)
-    print()
-
-    input("  Press Enter when results are on screen... ")
-
-    page = await resolve_jobs_page(ctx)
-    if page is None:
-        raise RuntimeError("No browser tab available after login.")
-
-    if not _is_jobs_url(page.url):
-        print(f"  Using tab (no jobs.htm in URL): {page.url}")
-        print(f"  (If scraping fails, open {config.label} and re-run.)\n")
+    if login_submitted:
+        print("  Credentials were loaded from .env and submitted automatically.")
+    elif credentials:
+        print("  The ADFS form was not detected; enter credentials in the browser.")
     else:
-        print(f"  Using tab: {page.url}\n")
+        print("  No .env credentials found; enter them in the browser.")
+    print("  Complete Duo if prompted.")
+    print("  The scraper is watching for the dashboard and will open")
+    print(f"  the {config.label} board automatically.")
+    print("=" * 60)
+    print()
 
-    await wait_for_listing_ready(page)
+    page = await wait_for_authenticated_page(ctx)
+    print(f"[SCRAPER] Login complete: {page.url}")
+    await navigate_to_board(page, config)
     return page
 
 
@@ -725,46 +886,12 @@ async def fetch_listing_page(
     page_num: int,
     config: BoardConfig,
     items_per_page: int,
-    page_nav_delay_ms: int,
 ) -> dict:
     """POST to the WW DataViewer endpoint; return IDs and list metadata for one page."""
     columns = list(config.list_columns)
-    result = await evaluate_retry(page, """
-        async ({action, pageNum, columns, itemsPerPage, pageNavDelayMs}) => {
-            const scrapeDom = () => {
-                const dom = {};
-                document.querySelectorAll('tr.table__row--body').forEach((tr) => {
-                    const cb = tr.querySelector('input[name="dataViewerSelection"]');
-                    if (!cb?.value) return;
-                    const cells = [...tr.querySelectorAll('td.table__value')].map((td) =>
-                        (td.innerText || td.textContent || '').trim()
-                    );
-                    const meta = {};
-                    columns.forEach((col, i) => {
-                        if (cells[i]) meta[col] = cells[i];
-                    });
-                    if (Object.keys(meta).length) dom[cb.value] = meta;
-                });
-                return dom;
-            };
-
-            const goToPage = async (n) => {
-                const targets = [...document.querySelectorAll(
-                    'button, a, [role="button"], .pagination button, .pagination a'
-                )];
-                const btn = targets.find((el) => {
-                    const text = (el.textContent || '').trim();
-                    const aria = el.getAttribute('aria-label') || '';
-                    return text === String(n)
-                        || aria === `Page ${n}`
-                        || aria === `Go to page ${n}`;
-                });
-                if (btn) {
-                    btn.click();
-                    await new Promise((r) => setTimeout(r, pageNavDelayMs));
-                }
-            };
-
+    if page_num == 1:
+        result = await evaluate_retry(page, """
+        async ({action, pageNum, itemsPerPage}) => {
             const form = new FormData();
             form.append('action', action);
             form.append('page', String(pageNum));
@@ -782,17 +909,77 @@ async def fetch_listing_page(
             const text = await resp.text();
             let json = null;
             try { json = JSON.parse(text); } catch (e) {}
-
-            await goToPage(pageNum);
-            return { json, text, dom: scrapeDom() };
+            return { json, text };
         }
-    """, {
-        "action": action,
-        "pageNum": page_num,
-        "columns": columns,
-        "itemsPerPage": items_per_page,
-        "pageNavDelayMs": page_nav_delay_ms,
-    })
+        """, {
+            "action": action,
+            "pageNum": page_num,
+            "itemsPerPage": items_per_page,
+        })
+    else:
+        previous_ids = await page.locator(
+            "input[name='dataViewerSelection']:visible"
+        ).evaluate_all("elements => elements.map(element => element.value)")
+        page_button = page.locator(
+            "button:visible, a:visible, [role='button']:visible, "
+            ".pagination button:visible, .pagination a:visible"
+        ).filter(has_text=re.compile(rf"^\s*{page_num}\s*$")).first
+        if not await page_button.count():
+            return {"ids": [], "listings": {}}
+
+        current_url = page.url.split("?", 1)[0]
+        async with page.expect_response(
+            lambda response: (
+                response.request.method == "POST"
+                and response.url.split("?", 1)[0] == current_url
+            ),
+            timeout=30_000,
+        ) as pending_response:
+            await page_button.click()
+        response = await pending_response.value
+        raw_text = await response.text()
+        try:
+            data = json.loads(raw_text)
+        except json.JSONDecodeError:
+            data = None
+
+        await page.wait_for_function(
+            """
+            (previousIds) => {
+                const currentIds = [...document.querySelectorAll(
+                    'input[name="dataViewerSelection"]'
+                )]
+                    .filter((element) => element.getClientRects().length > 0)
+                    .map((element) => element.value);
+                return currentIds.length > 0
+                    && (currentIds.length !== previousIds.length
+                        || currentIds.some((id, index) => id !== previousIds[index]));
+            }
+            """,
+            arg=previous_ids,
+            timeout=30_000,
+        )
+        result = {"json": data, "text": raw_text}
+
+    result["dom"] = await page.evaluate("""
+        (columns) => {
+            const dom = {};
+            document.querySelectorAll('tr.table__row--body').forEach((tr) => {
+                if (tr.getClientRects().length === 0) return;
+                const cb = tr.querySelector('input[name="dataViewerSelection"]');
+                if (!cb?.value) return;
+                const cells = [...tr.querySelectorAll('td.table__value')].map((td) =>
+                    (td.innerText || td.textContent || '').trim()
+                );
+                const meta = {};
+                columns.forEach((col, i) => {
+                    if (cells[i]) meta[col] = cells[i];
+                });
+                if (Object.keys(meta).length) dom[cb.value] = meta;
+            });
+            return dom;
+        }
+    """, columns)
 
     raw_text = result.get("text") or ""
     data = result.get("json")
@@ -818,11 +1005,9 @@ async def collect_all_listings(page, config: BoardConfig) -> dict[str, dict[str,
     consecutive_no_new = 0
 
     while True:
-        page_nav_s = random.uniform(PAGE_NAV_DELAY_MIN_S, PAGE_NAV_DELAY_MAX_S)
-        page_nav_ms = int(page_nav_s * 1000)
-        print(f"[COLLECT] page {page_num} (wait {page_nav_s:.1f}s after click)...")
+        print(f"[COLLECT] page {page_num}...")
         page_result = await fetch_listing_page(
-            page, action, page_num, config, items_per_page, page_nav_ms,
+            page, action, page_num, config, items_per_page,
         )
         page_listings = page_result.get("listings") or {}
         page_ids = page_result["ids"]
@@ -985,17 +1170,49 @@ async def ratings_api_available(page) -> bool:
     """))
 
 
-async def fetch_ratings(page, job_id: str, cache: dict) -> list | None:
+async def fetch_ratings(
+    page,
+    job_id: str,
+    cache: dict[str, list],
+    *,
+    inflight: dict[str, asyncio.Task] | None = None,
+    cache_lock: asyncio.Lock | None = None,
+) -> list | None:
     """Ratings sections for a posting's division; cached per divId for the run."""
     data = await get_posting_data(page, job_id)
     div_id = (data or {}).get("divId")
     if div_id is None:
         return None
     key = str(div_id)
-    if key not in cache:
-        report = await get_work_term_ratings(page, div_id)
-        cache[key] = (report or {}).get("sections") or []
-    return cache[key]
+
+    if inflight is None or cache_lock is None:
+        if key not in cache:
+            report = await get_work_term_ratings(page, div_id)
+            cache[key] = (report or {}).get("sections") or []
+        return cache[key]
+
+    async with cache_lock:
+        if key in cache:
+            return cache[key]
+        task = inflight.get(key)
+        if task is None:
+            task = asyncio.create_task(get_work_term_ratings(page, div_id))
+            inflight[key] = task
+
+    try:
+        report = await task
+    except Exception:
+        async with cache_lock:
+            if inflight.get(key) is task:
+                inflight.pop(key, None)
+        raise
+
+    sections = (report or {}).get("sections") or []
+    async with cache_lock:
+        cache[key] = sections
+        if inflight.get(key) is task:
+            inflight.pop(key, None)
+    return sections
 
 
 async def probe_ratings(page, config: BoardConfig, n: int) -> None:
@@ -1007,7 +1224,7 @@ async def probe_ratings(page, config: BoardConfig, n: int) -> None:
     else:
         action = await get_action_key(page)
         items = await get_items_per_page(page)
-        ids = (await fetch_listing_page(page, action, 1, config, items, 0))["ids"]
+        ids = (await fetch_listing_page(page, action, 1, config, items))["ids"]
         print(f"[PROBE] {len(ids)} job IDs from listing page 1")
     ids = ids[:n]
 
@@ -1035,8 +1252,6 @@ async def probe_ratings(page, config: BoardConfig, n: int) -> None:
             "posting_data": data,
             "ratings": report,
         })
-        await asyncio.sleep(random.uniform(0.8, 1.2))
-
     out = DATA_DIR / "ratings_sample.json"
     out.write_text(json.dumps(samples, indent=2))
     print(f"[PROBE] wrote {out}")
@@ -1044,8 +1259,116 @@ async def probe_ratings(page, config: BoardConfig, n: int) -> None:
 
 # ── Scrape loop ───────────────────────────────────────────────────────────────
 
+async def scrape_jobs(
+    page,
+    worker_count: int,
+    todo: list[str],
+    listings: dict[str, dict[str, str]],
+    config: BoardConfig,
+    *,
+    ratings: bool,
+    single_worker_ids: set[str] | None = None,
+) -> tuple[int, list[str]]:
+    """Scrape posting details with concurrent workers sharing one browser page."""
+    write_lock = asyncio.Lock()
+    ratings_lock = asyncio.Lock()
+    ratings_cache: dict[str, list] = {}
+    ratings_inflight: dict[str, asyncio.Task] = {}
+    failed: set[str] = set()
+    scraped = 0
+
+    async def worker(
+        worker_id: int,
+        queue: asyncio.Queue[tuple[int, str]],
+    ) -> None:
+        nonlocal scraped
+        prefix = f"[SCRAPE W{worker_id}]"
+
+        while True:
+            try:
+                position, job_id = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                return
+
+            try:
+                print(f"{prefix} ({position}/{len(todo)}) job {job_id}")
+                html = await fetch_overview_with_retry(page, job_id)
+                if not html:
+                    print(f"{prefix}   FAILED (no HTML after retries).")
+                    failed.add(job_id)
+                    continue
+
+                fields = await parse_overview_html(page, html)
+                if ratings:
+                    sections = await fetch_ratings(
+                        page,
+                        job_id,
+                        ratings_cache,
+                        inflight=ratings_inflight,
+                        cache_lock=ratings_lock,
+                    )
+                    if sections:
+                        fields["_ratings"] = sections
+
+                list_meta = listings.get(job_id, {})
+                now = datetime.now(timezone.utc).isoformat()
+                row = build_row(job_id, config.board_type, fields, now, list_meta)
+                async with write_lock:
+                    append_output(row)
+                scraped += 1
+
+                title = row.get("title") or "(no title)"
+                org = row.get("org") or "(no org)"
+                apps = row.get("apps_count", "")
+                extra = f" apps={apps}" if apps else ""
+                if fields.get("_ratings"):
+                    extra += f" ratings={len(fields['_ratings'])}"
+                print(f"{prefix}   → {title} @ {org}{extra}")
+            except PlaywrightError as exc:
+                print(f"{prefix}   FAILED ({exc})")
+                failed.add(job_id)
+            finally:
+                queue.task_done()
+
+    async def run_phase(job_ids: list[str], count: int) -> None:
+        queue: asyncio.Queue[tuple[int, str]] = asyncio.Queue()
+        positions = {job_id: position for position, job_id in enumerate(todo, 1)}
+        for job_id in job_ids:
+            queue.put_nowait((positions[job_id], job_id))
+        await asyncio.gather(*(
+            worker(worker_id, queue)
+            for worker_id in range(1, min(count, len(job_ids)) + 1)
+        ))
+
+    single_worker_ids = single_worker_ids or set()
+    parallel_jobs = [job_id for job_id in todo if job_id not in single_worker_ids]
+    tail_jobs = [job_id for job_id in todo if job_id in single_worker_ids]
+
+    if parallel_jobs:
+        parallel_workers = min(worker_count, len(parallel_jobs))
+        print(
+            f"[SCRAPE] Starting {parallel_workers} concurrent worker(s) "
+            "on the authenticated listings page.\n"
+        )
+        await run_phase(parallel_jobs, parallel_workers)
+    if tail_jobs:
+        print(
+            f"\n[SCRAPE] Final partial listing page has {len(tail_jobs)} job(s); "
+            "using one worker.\n"
+        )
+        await run_phase(tail_jobs, 1)
+
+    failed_in_listing_order = [job_id for job_id in todo if job_id in failed]
+    return scraped, failed_in_listing_order
+
+
 async def run_scrape(
-    ctx, page, config: BoardConfig, *, resume: bool = False, ratings: bool = True,
+    page,
+    config: BoardConfig,
+    *,
+    resume: bool = False,
+    ratings: bool = True,
+    workers: int = DEFAULT_WORKERS,
 ) -> None:
     listings = await collect_all_listings(page, config)
     if not listings:
@@ -1078,40 +1401,25 @@ async def run_scrape(
     if ratings and not await ratings_api_available(page):
         print("[SCRAPE] Ratings API not defined on this page — skipping work term ratings.")
         ratings = False
-    ratings_cache: dict[str, list] = {}
 
-    scraped = 0
-    failed: list[str] = []
-    for i, job_id in enumerate(todo, 1):
-        print(f"[SCRAPE] ({i}/{len(todo)}) job {job_id}")
-
-        html = await fetch_overview_with_retry(page, job_id)
-        if not html:
-            print("[SCRAPE]   FAILED (no HTML after retries).")
-            failed.append(job_id)
-        else:
-            fields = await parse_overview_html(page, html)
-            if ratings:
-                sections = await fetch_ratings(page, job_id, ratings_cache)
-                if sections:
-                    fields["_ratings"] = sections
-            list_meta = listings.get(job_id, {})
-            now = datetime.now(timezone.utc).isoformat()
-            row = build_row(job_id, config.board_type, fields, now, list_meta)
-            append_output(row)
-            title = row.get("title") or "(no title)"
-            org = row.get("org") or "(no org)"
-            apps = row.get("apps_count", "")
-            extra = f" apps={apps}" if apps else ""
-            if fields.get("_ratings"):
-                extra += f" ratings={len(fields['_ratings'])}"
-            print(f"[SCRAPE]   → {title} @ {org}{extra}")
-            scraped += 1
-
-        if i < len(todo):
-            delay = random.uniform(0.8, 1.2)
-            print(f"[SCRAPE]   sleeping {delay:.1f}s...")
-            await asyncio.sleep(delay)
+    worker_count = min(workers, len(todo)) if todo else 0
+    if worker_count:
+        items_per_page = await get_items_per_page(page)
+        partial_page_size = len(all_ids) % items_per_page
+        single_worker_ids = (
+            set(all_ids[-partial_page_size:]) if partial_page_size else set()
+        )
+        scraped, failed = await scrape_jobs(
+            page,
+            worker_count,
+            todo,
+            listings,
+            config,
+            ratings=ratings,
+            single_worker_ids=single_worker_ids,
+        )
+    else:
+        scraped, failed = 0, []
 
     # Diagnostics: make loss between "listed" and "scraped" visible.
     if failed:
@@ -1152,16 +1460,22 @@ async def main() -> None:
             viewport={"width": 1280, "height": 900},
         )
         page = ctx.pages[0] if ctx.pages else await ctx.new_page()
-        await page.goto("https://waterlooworks.uwaterloo.ca/", wait_until="domcontentloaded")
-        jobs_page = await wait_for_login(ctx, config)
-        await wait_for_listing_ready(jobs_page)
+        await page.goto(LOGIN_URL, wait_until="domcontentloaded")
+        credentials = load_login_credentials()
+        login_submitted = False
+        if credentials:
+            await wait_for_login_destination(page)
+            login_submitted = await submit_adfs_login(page, *credentials)
+        jobs_page = await wait_for_login(ctx, config, credentials, login_submitted)
 
         if args.probe_ratings:
             await probe_ratings(jobs_page, config, args.probe_ratings)
         else:
             await run_scrape(
-                ctx, jobs_page, config,
-                resume=args.resume, ratings=not args.no_ratings,
+                jobs_page, config,
+                resume=args.resume,
+                ratings=not args.no_ratings,
+                workers=args.workers,
             )
 
         await ctx.close()
