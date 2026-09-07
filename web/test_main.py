@@ -18,6 +18,7 @@ from web.main import (
     extract_apply_info,
     extract_posting_attrs,
     extract_ratings,
+    parse_applied_job_ids,
     rank_embeddings,
 )
 
@@ -248,3 +249,133 @@ def test_search_endpoint_without_embeddings(tmp_path, monkeypatch):
     r = TestClient(app).get("/api/search", params={"q": "x"})
     assert r.status_code == 503
     assert "embed" in r.json()["detail"].lower()
+
+
+# ── add applied ───────────────────────────────────────────────────────────────
+
+APPLICATIONS_PAGE = """
+WaterlooWorks
+Home
+arrow_back
+Applications
+You have submitted 48 of 50 applications for the current recruiting term.
+Job Title
+swap_vert
+App Submitted On (1)
+
+preview
+print
+cancel
+Software Engineering Intern
+483949
+2027 - Winter
+Fable Security Inc
+Applied
+Open for Applications
+Divisional Office
+USA - West
+San Francisco
+2
+Sep 17, 2026 9:00 AM
+Sep 6, 2026 9:13 PM
+Julian Einard Salvador
+
+preview
+print
+cancel
+Software Developer
+484037
+2027 - Winter
+Open Text Corporation
+Applied
+Open for Applications
+Corporate Headquarters
+ON - Waterloo Region
+Waterloo
+3
+Sep 17, 2026 9:00 AM
+Sep 6, 2026 4:38 PM
+Julian Einard Salvador
+fast_rewind
+1
+2
+48 results
+1 - 45
+© 2026 Orbis Communications Inc.
+"""
+
+
+def test_parse_applied_job_ids_from_page():
+    assert parse_applied_job_ids(APPLICATIONS_PAGE) == ["483949", "484037"]
+
+
+def test_parse_applied_ignores_years_counts_and_times():
+    # Years (2027, 2026), openings (2, 3), "48 of 50" and page numbers must not
+    # be mistaken for job IDs.
+    for noise in ("2027", "2026", "48", "50", "45", "9:00"):
+        assert noise not in parse_applied_job_ids(APPLICATIONS_PAGE)
+
+
+def test_parse_applied_dedupes_repeated_pastes():
+    assert parse_applied_job_ids(APPLICATIONS_PAGE + APPLICATIONS_PAGE) == ["483949", "484037"]
+
+
+def test_parse_applied_falls_back_to_bare_ids_without_line_structure():
+    flat = "Software Engineering Intern 483949 2027 - Winter Applied 484037 stuff"
+    assert parse_applied_job_ids(flat) == ["483949", "484037"]
+
+
+def test_parse_applied_empty():
+    assert parse_applied_job_ids("") == []
+    assert parse_applied_job_ids("no ids here, just 2027 and 48") == []
+
+
+def _applied_db(path: Path, statuses: dict[str, str]) -> None:
+    schema = (Path(__file__).parent.parent / "db" / "schema.sql").read_text()
+    with sqlite3.connect(path) as conn:
+        conn.executescript(schema)
+        for jid, status in statuses.items():
+            conn.execute(
+                "INSERT INTO postings (job_id, title, status) VALUES (?, ?, ?)",
+                (jid, "t", status),
+            )
+
+
+def test_mark_applied_endpoint(tmp_path, monkeypatch):
+    db = tmp_path / "p.db"
+    _applied_db(db, {"483949": "new", "484037": "applied", "999999": "maybe"})
+    monkeypatch.setattr(main, "DB_PATH", db)
+
+    r = TestClient(app).post("/api/postings/applied", json={"text": APPLICATIONS_PAGE})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["parsed"] == 2
+    assert body["matched"] == 2
+    assert body["updated"] == 1
+    assert body["already_applied"] == 1
+    assert body["unknown"] == []
+    assert body["applied_job_ids"] == ["483949", "484037"]
+
+    with sqlite3.connect(db) as conn:
+        rows = dict(conn.execute("SELECT job_id, status FROM postings").fetchall())
+    # Postings absent from the paste keep their status.
+    assert rows == {"483949": "applied", "484037": "applied", "999999": "maybe"}
+
+
+def test_mark_applied_reports_unknown_ids(tmp_path, monkeypatch):
+    db = tmp_path / "p.db"
+    _applied_db(db, {"483949": "new"})
+    monkeypatch.setattr(main, "DB_PATH", db)
+
+    r = TestClient(app).post("/api/postings/applied", json={"text": APPLICATIONS_PAGE})
+    body = r.json()
+    assert body["updated"] == 1
+    assert body["unknown"] == ["484037"]
+    assert body["applied_job_ids"] == ["483949"]
+
+
+def test_mark_applied_rejects_paste_without_ids(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "DB_PATH", tmp_path / "p.db")
+    r = TestClient(app).post("/api/postings/applied", json={"text": "nothing useful"})
+    assert r.status_code == 400
+    assert "job id" in r.json()["detail"].lower()

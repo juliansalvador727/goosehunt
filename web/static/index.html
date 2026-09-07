@@ -308,6 +308,14 @@
         border-color: var(--red);
         background: var(--red-bg);
       }
+      .tb-btn.accent {
+        color: var(--ac);
+      }
+      .tb-btn.accent:hover {
+        border-color: var(--ac);
+        background: var(--ac-bg);
+        color: var(--ac);
+      }
       .tb-btn svg {
         display: block;
       }
@@ -322,6 +330,137 @@
         50% {
           opacity: 0.35;
         }
+      }
+
+      /* ── add applied overlay ─────────────────────────────────── */
+      #applied-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(12, 14, 20, 0.72);
+        backdrop-filter: blur(2px);
+        z-index: 520;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 9vh 20px 20px;
+      }
+      body.light #applied-overlay {
+        background: rgba(70, 78, 94, 0.55);
+      }
+      #applied-box {
+        width: 720px;
+        max-width: 100%;
+        max-height: 82vh;
+        display: flex;
+        flex-direction: column;
+        background: var(--s2);
+        border: 1px solid var(--bd2);
+        border-radius: 10px;
+        box-shadow: 0 32px 80px rgba(0, 0, 0, 0.7);
+        overflow: hidden;
+      }
+      .ap-head {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 14px 18px 10px;
+      }
+      .ap-head h2 {
+        font-size: 15px;
+        font-weight: 600;
+        flex: 1;
+      }
+      .ap-head svg {
+        color: var(--ac);
+        display: block;
+      }
+      .ap-steps {
+        margin: 0 18px 12px;
+        padding-left: 18px;
+        font-size: 12.5px;
+        line-height: 1.75;
+        color: var(--tx2);
+      }
+      .ap-steps code {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--tx);
+      }
+      #applied-text {
+        margin: 0 18px;
+        min-height: 150px;
+        flex: 1;
+        resize: none;
+        padding: 11px 12px;
+        background: var(--s1);
+        border: 1px solid var(--bd);
+        border-radius: 7px;
+        color: var(--tx);
+        font-family: var(--mono);
+        font-size: 11.5px;
+        line-height: 1.5;
+      }
+      #applied-text:focus {
+        outline: none;
+        border-color: var(--ac);
+      }
+      #applied-text::placeholder {
+        color: var(--tx3);
+      }
+      .ap-result {
+        margin: 12px 18px 0;
+        padding: 9px 11px;
+        border-radius: 7px;
+        border: 1px solid var(--bd2);
+        background: var(--s3);
+        font-size: 12.5px;
+        line-height: 1.5;
+        color: var(--tx2);
+      }
+      .ap-result.ok {
+        border-color: rgba(34, 197, 94, 0.35);
+        color: var(--green);
+      }
+      .ap-result.err {
+        border-color: var(--red);
+        color: var(--red);
+      }
+      .ap-result .ap-unknown {
+        display: block;
+        margin-top: 4px;
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--tx3);
+      }
+      .ap-foot {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 14px;
+        padding: 11px 18px;
+        border-top: 1px solid var(--bd);
+      }
+      .ap-foot .ap-hint {
+        flex: 1;
+        font-size: 11px;
+        color: var(--tx3);
+      }
+      .ap-go {
+        padding: 7px 14px;
+        border-radius: 6px;
+        border: 1px solid var(--ac);
+        background: var(--ac-bg);
+        color: var(--ac);
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .ap-go:hover:not(:disabled) {
+        background: var(--ac);
+        color: #fff;
+      }
+      .ap-go:disabled {
+        opacity: 0.5;
+        cursor: default;
       }
 
       /* ── workspace ───────────────────────────────────────────── */
@@ -1252,6 +1391,39 @@
       </div>
     </div>
 
+    <!-- ── add applied ────────────────────────────────────────────── -->
+    <div id="applied-overlay" x-show="appliedOpen" x-cloak @click.self="closeApplied()">
+      <div id="applied-box">
+        <div class="ap-head">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.8 10A10 10 0 1 1 17 3.34"></path>
+            <polyline points="9 11 12 14 22 4"></polyline>
+          </svg>
+          <h2>Add applied</h2>
+          <button class="close-btn" @click="closeApplied()" title="Close (Esc)">×</button>
+        </div>
+        <ol class="ap-steps">
+          <li>Open WaterlooWorks → <code>Postings / Applications</code> → <code>Applications</code>.</li>
+          <li>Select the whole page (<kbd>Ctrl</kbd><kbd>A</kbd>) and copy it (<kbd>Ctrl</kbd><kbd>C</kbd>). Repeat for each page of results.</li>
+          <li>Paste below (<kbd>Ctrl</kbd><kbd>V</kbd>). Only the job IDs are read — everything else is ignored.</li>
+        </ol>
+        <textarea
+          id="applied-text"
+          x-ref="apIn"
+          x-model="appliedText"
+          placeholder="Paste your WaterlooWorks applications page here…"
+        ></textarea>
+        <div x-show="appliedResult" x-cloak class="ap-result" :class="appliedResultKind">
+          <span x-text="appliedResult"></span>
+          <span x-show="appliedUnknown.length" class="ap-unknown" x-text="'Not in this board: ' + appliedUnknown.join(', ')"></span>
+        </div>
+        <div class="ap-foot">
+          <span class="ap-hint"><kbd>esc</kbd>close &nbsp; <kbd>Ctrl</kbd><kbd>Enter</kbd>mark applied</span>
+          <button class="ap-go" @click="markApplied()" :disabled="marking || !appliedText.trim()" x-text="marking ? 'Marking…' : 'Mark as applied'"></button>
+        </div>
+      </div>
+    </div>
+
     <!-- ── topbar ─────────────────────────────────────────────────── -->
     <div id="topbar">
       <span class="logo">
@@ -1275,6 +1447,17 @@
       <button class="tb-btn" x-show="!filterOpen" x-cloak @click="toggleFilters()">Show filters</button>
 
       <div class="topbar-r">
+        <button
+          class="tb-btn accent"
+          @click="openApplied()"
+          title="Paste your WaterlooWorks applications page to mark those jobs applied"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.8 10A10 10 0 1 1 17 3.34"></path>
+            <polyline points="9 11 12 14 22 4"></polyline>
+          </svg>
+          <span>Add applied</span>
+        </button>
         <button
           class="tb-btn danger"
           @click="deleteExpired()"
@@ -1904,6 +2087,12 @@
           drawerW: 720,
           drag: null,
           deletingExpired: false,
+          appliedOpen: false,
+          appliedText: "",
+          appliedResult: "",
+          appliedResultKind: "",
+          appliedUnknown: [],
+          marking: false,
           cpId_: null,
           cpEmail_: false,
           pal: false,
@@ -2096,6 +2285,56 @@
               this.apiError = err?.message || "Could not delete expired jobs.";
             } finally {
               this.deletingExpired = false;
+            }
+          },
+          openApplied() {
+            this.appliedOpen = true;
+            this.appliedText = "";
+            this.appliedResult = "";
+            this.appliedResultKind = "";
+            this.appliedUnknown = [];
+            this.$nextTick(() => this.$refs.apIn?.focus());
+          },
+          closeApplied() {
+            this.appliedOpen = false;
+          },
+          async markApplied() {
+            const text = this.appliedText.trim();
+            if (this.marking || !text) return;
+            this.marking = true;
+            this.appliedUnknown = [];
+            try {
+              const r = await fetch("/api/postings/applied", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text }),
+              });
+              const body = await r.json().catch(() => ({}));
+              if (!r.ok) throw new Error(body.detail || "Could not mark jobs as applied.");
+
+              const marked = new Set(body.applied_job_ids || []);
+              this.postings.forEach((p) => {
+                if (marked.has(p.job_id)) p.status = "applied";
+              });
+              this.recount();
+              this.applyFilters();
+
+              const n = body.updated || 0;
+              const plural = (k) => (k === 1 ? "" : "s");
+              let msg = `Marked ${n} job${plural(n)} as applied.`;
+              if (body.already_applied) msg += ` ${body.already_applied} already were.`;
+              if (body.unknown?.length) {
+                // Postings from the other board, or ones pruned since the last scrape.
+                msg += ` ${body.unknown.length} ID${plural(body.unknown.length)} not in the database.`;
+                this.appliedUnknown = body.unknown;
+              }
+              this.appliedResult = msg;
+              this.appliedResultKind = n ? "ok" : "";
+            } catch (err) {
+              this.appliedResult = err?.message || "Could not mark jobs as applied.";
+              this.appliedResultKind = "err";
+            } finally {
+              this.marking = false;
             }
           },
 
@@ -2343,6 +2582,17 @@
           },
 
           onKey(e) {
+            if (this.appliedOpen) {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                this.closeApplied();
+              }
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                this.markApplied();
+              }
+              return;
+            }
             if ((e.metaKey || e.ctrlKey) && e.key === "k") {
               e.preventDefault();
               this._openPal();
@@ -2457,6 +2707,7 @@
               { id: "vfil", cat: "view", label: this.filterOpen ? "Hide filters (f)" : "Show filters (f)", fn: () => this.toggleFilters() },
               { id: "vclose", cat: "view", label: "Close posting (Esc)", fn: () => this.closeDrawer() },
               { id: "vtheme", cat: "view", label: "Toggle day / night", fn: () => this.toggleTheme() },
+              { id: "applied", cat: "action", label: "Add applied (paste your WaterlooWorks applications)", fn: () => this.openApplied() },
               { id: "cid", cat: "copy", label: "Copy selected job ID (c)", fn: () => { if (this.selId) this.cpId(this.selId); } },
               { id: "cem", cat: "copy", label: "Copy apply email (m)", fn: () => { if (this.selPosting?.apply_email) this.cpEmail(this.selPosting.apply_email); } },
               { id: "kj", cat: "keys", label: "j / k — next / previous posting", fn: () => this._nav(1) },

@@ -340,7 +340,7 @@ Employers with no report return `{"missingReportStructure": ...}`; the scraper s
 
 Three regions: a resizable filter sidebar on the left, the job list, and a detail drawer that slides over the list from the right when a posting is selected. Both the sidebar and the drawer have a drag handle (double-click resets) and remember their width in `localStorage`.
 
-**Topbar:** board picker (`Employer Direct` / `Full Cycle`; the UI opens on whichever board has data), delete-expired, Ctrl+K, day/night. When the sidebar is hidden a "Show filters" button appears here (`f` toggles it).
+**Topbar:** board picker (`Employer Direct` / `Full Cycle`; the UI opens on whichever board has data), add-applied, delete-expired, Ctrl+K, day/night. When the sidebar is hidden a "Show filters" button appears here (`f` toggles it).
 
 **List toolbar:** the search box with a Text / Semantic toggle, a spinning search icon and "Loading model…" placeholder while the first semantic query warms the server (nothing reflows), a "Sorted by …" pill (click opens the palette), and the visible / total count.
 
@@ -367,7 +367,13 @@ Three regions: a resizable filter sidebar on the left, the job list, and a detai
 | `Shift+P` | Sort by pay                    |
 | `Ctrl+K` | Command palette                 |
 
-**Command palette (Ctrl+K):** sorts, one toggle per filter option, cover letter / history / expired toggles, clear filters, clear search, switch search mode, show/hide filters, close posting, theme, copy actions, and the shortcut list.
+**Add applied:** a full-screen overlay (`Esc` closes, `Ctrl+Enter` submits) with a textarea for the WaterlooWorks applications page. It POSTs the raw paste to `/api/postings/applied`, which parses it in `web/applied.py` and flips the matched postings to `applied`.
+
+Parsing anchors on the only two machine-shaped lines in a row — a bare 5-8 digit ID immediately followed by a work term (`2027 - Winter`) — which is why years, opening counts, page numbers, and the "48 of 50" header can't be mistaken for job IDs. Some browsers flatten a copied table into a single line, so when the structured pass finds nothing the parser falls back to every bare 5-8 digit number; that stays safe because the endpoint only writes IDs that already exist in `postings`.
+
+The write is additive: IDs absent from the paste keep their status, and re-pasting the same page is a no-op (`updated: 0`). The response reports `parsed` / `matched` / `updated` / `already_applied` plus the `unknown` IDs — postings on the other board, or ones pruned since the last scrape — and the UI patches the in-memory rows from `applied_job_ids` so the table, status column, and sidebar counts update without a reload.
+
+**Command palette (Ctrl+K):** sorts, one toggle per filter option, cover letter / history / expired toggles, clear filters, clear search, switch search mode, show/hide filters, close posting, theme, add applied, copy actions, and the shortcut list.
 
 **Error states:**
 
