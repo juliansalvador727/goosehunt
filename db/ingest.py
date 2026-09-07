@@ -9,6 +9,19 @@ from typing import Iterator
 
 from dateutil import parser as dateutil_parser
 
+try:
+    from db.compensation import (
+        COMPENSATION_COLUMN_TYPES,
+        COMPENSATION_VERSION,
+        normalize_compensation,
+    )
+except ModuleNotFoundError:  # `python db/ingest.py` puts db/ first on sys.path.
+    from compensation import (  # type: ignore[no-redef]
+        COMPENSATION_COLUMN_TYPES,
+        COMPENSATION_VERSION,
+        normalize_compensation,
+    )
+
 logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.WARNING)
 log = logging.getLogger(__name__)
 
@@ -23,12 +36,22 @@ INSERT INTO postings (
     job_id, board_type, title, org, location,
     deadline, deadline_iso, work_term, openings, apps_count,
     summary, responsibilities, required_skills,
-    raw_fields_json, scraped_at, updated_at
+    raw_fields_json, scraped_at, updated_at,
+    comp_raw_text, comp_native_min, comp_native_max, comp_currency, comp_period,
+    comp_hours_per_week, comp_hourly_native_min, comp_hourly_native_max,
+    comp_hourly_cad_min, comp_hourly_cad_max, comp_hourly_cad_mid,
+    comp_fx_rate, comp_fx_date, comp_parse_status, comp_confidence, comp_tiers_json,
+    comp_parser_version
 ) VALUES (
     :job_id, :board_type, :title, :org, :location,
     :deadline, :deadline_iso, :work_term, :openings, :apps_count,
     :summary, :responsibilities, :required_skills,
-    :raw_fields_json, :scraped_at, :updated_at
+    :raw_fields_json, :scraped_at, :updated_at,
+    :comp_raw_text, :comp_native_min, :comp_native_max, :comp_currency, :comp_period,
+    :comp_hours_per_week, :comp_hourly_native_min, :comp_hourly_native_max,
+    :comp_hourly_cad_min, :comp_hourly_cad_max, :comp_hourly_cad_mid,
+    :comp_fx_rate, :comp_fx_date, :comp_parse_status, :comp_confidence, :comp_tiers_json,
+    :comp_parser_version
 )
 """
 
@@ -47,6 +70,23 @@ UPDATE postings SET
     responsibilities = :responsibilities,
     required_skills  = :required_skills,
     raw_fields_json  = :raw_fields_json,
+    comp_raw_text    = :comp_raw_text,
+    comp_native_min  = :comp_native_min,
+    comp_native_max  = :comp_native_max,
+    comp_currency    = :comp_currency,
+    comp_period      = :comp_period,
+    comp_hours_per_week = :comp_hours_per_week,
+    comp_hourly_native_min = :comp_hourly_native_min,
+    comp_hourly_native_max = :comp_hourly_native_max,
+    comp_hourly_cad_min = :comp_hourly_cad_min,
+    comp_hourly_cad_max = :comp_hourly_cad_max,
+    comp_hourly_cad_mid = :comp_hourly_cad_mid,
+    comp_fx_rate     = :comp_fx_rate,
+    comp_fx_date     = :comp_fx_date,
+    comp_parse_status = :comp_parse_status,
+    comp_confidence  = :comp_confidence,
+    comp_tiers_json  = :comp_tiers_json,
+    comp_parser_version = :comp_parser_version,
     updated_at       = :updated_at
 WHERE job_id = :job_id
 """
@@ -61,6 +101,9 @@ def init_db(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE postings ADD COLUMN status TEXT NOT NULL DEFAULT 'new'")
     if "apps_count" not in columns:
         conn.execute("ALTER TABLE postings ADD COLUMN apps_count INTEGER")
+    for name, sql_type in COMPENSATION_COLUMN_TYPES.items():
+        if name not in columns:
+            conn.execute(f"ALTER TABLE postings ADD COLUMN {name} {sql_type}")
     conn.commit()
 
 
@@ -102,7 +145,7 @@ def load_jsonl(path: Path) -> Iterator[dict]:
 
 
 def build_params(record: dict) -> dict:
-    return {
+    params = {
         "job_id":          record["job_id"],
         "board_type":      record.get("board_type"),
         "title":           record.get("title"),
@@ -120,6 +163,8 @@ def build_params(record: dict) -> dict:
         "scraped_at":      record.get("scraped_at"),
         "updated_at":      record.get("updated_at"),
     }
+    params.update(normalize_compensation(record.get("raw_fields_json") or "{}"))
+    return params
 
 
 def load_listing_manifests() -> dict[str, set[str]]:
@@ -170,7 +215,7 @@ def purge_unlisted(conn: sqlite3.Connection) -> int:
 
 def upsert_posting(conn: sqlite3.Connection, params: dict) -> str:
     row = conn.execute(
-        "SELECT raw_fields_json FROM postings WHERE job_id = ?",
+        "SELECT raw_fields_json, comp_parser_version FROM postings WHERE job_id = ?",
         (params["job_id"],),
     ).fetchone()
 
@@ -178,7 +223,7 @@ def upsert_posting(conn: sqlite3.Connection, params: dict) -> str:
         conn.execute(_INSERT_SQL, params)
         return "inserted"
 
-    if row[0] == params["raw_fields_json"]:
+    if row[0] == params["raw_fields_json"] and row[1] == COMPENSATION_VERSION:
         return "skipped"
 
     conn.execute(_UPDATE_SQL, params)

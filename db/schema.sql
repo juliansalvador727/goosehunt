@@ -21,7 +21,24 @@ CREATE TABLE IF NOT EXISTS postings (
     score_hardware          REAL,
     score_software          REAL,
     score_ai_ml             REAL,
-    score_resume            REAL
+    score_resume            REAL,
+    comp_raw_text           TEXT,
+    comp_native_min         REAL,
+    comp_native_max         REAL,
+    comp_currency           TEXT,
+    comp_period             TEXT,
+    comp_hours_per_week     REAL,
+    comp_hourly_native_min  REAL,
+    comp_hourly_native_max  REAL,
+    comp_hourly_cad_min     REAL,
+    comp_hourly_cad_max     REAL,
+    comp_hourly_cad_mid     REAL,
+    comp_fx_rate            REAL,
+    comp_fx_date            TEXT,
+    comp_parse_status       TEXT,
+    comp_confidence         TEXT,
+    comp_tiers_json         TEXT,
+    comp_parser_version     INTEGER
 );
 
 -- Reserved for on-demand LLM fit evaluations, keyed by (resume_hash, job_id).

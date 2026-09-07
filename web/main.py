@@ -12,6 +12,12 @@ import yaml
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 
+from db.compensation import (
+    COMPENSATION_COLUMN_TYPES,
+    COMPENSATION_VERSION,
+    normalize_compensation,
+)
+
 DB_PATH = Path(__file__).parent.parent / "data" / "postings.db"
 STATIC_DIR = Path(__file__).parent / "static"
 _ROLES_PATH = Path(__file__).parent.parent / "config" / "roles.yaml"
@@ -59,6 +65,12 @@ COLUMNS = [
     "raw_fields_json", "scraped_at", "updated_at", "status",
     "score_firmware", "score_hardware",
     "score_software", "score_ai_ml", "score_resume",
+    "comp_raw_text", "comp_native_min", "comp_native_max",
+    "comp_currency", "comp_period", "comp_hours_per_week",
+    "comp_hourly_native_min", "comp_hourly_native_max",
+    "comp_hourly_cad_min", "comp_hourly_cad_max", "comp_hourly_cad_mid",
+    "comp_fx_rate", "comp_fx_date", "comp_parse_status", "comp_confidence",
+    "comp_tiers_json", "comp_parser_version",
 ]
 
 app = FastAPI()
@@ -74,201 +86,13 @@ def ensure_postings_schema(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE postings ADD COLUMN status TEXT NOT NULL DEFAULT 'new'")
     if "apps_count" not in columns:
         conn.execute("ALTER TABLE postings ADD COLUMN apps_count INTEGER")
+    for name, sql_type in COMPENSATION_COLUMN_TYPES.items():
+        if name not in columns:
+            conn.execute(f"ALTER TABLE postings ADD COLUMN {name} {sql_type}")
     conn.commit()
-
-_NUM = r"[\d,]+(?:\.\d+)?"
-_SEP = r"\s*[-–/]\s*|\s+to\s+"   # separators between range bounds
-_PER_H = r"(?:(?:per|an?)\s+|/\s*)?(?:hr|h|hour)s?\b"
-_PER_W = r"(?:per\s+|/\s*)?weeks?\b"
-_PER_M = r"(?:per\s+|/\s*)?(?:month|mo)\b"
-_PER_Y = r"(?:per\s+|/\s*)?(?:year|annuall?y?|annum|yr|y)\b"
-_PER_BW = r"(?:/\s*)?bi-?\s*weekly\b"
-
-# Ordered by specificity — first match wins within each period bucket.
-_HOURLY_RE = [
-    # "$25 - $29 hourly" / "$25-$30/hr" / "$25 to $30 per hour"
-    re.compile(rf"\$({_NUM})(?:{_SEP})\$?({_NUM})\s*(?:hourly|{_PER_H})", re.I),
-    # bare range with hr suffix: "20.29 - 24.11 /hour"
-    re.compile(rf"({_NUM})(?:{_SEP})({_NUM})\s*{_PER_H}", re.I),
-    # single: "$27 per hour" / "$27/hr" / "$25 CAD/hour"
-    re.compile(rf"\$({_NUM})\s*(?:[A-Z]{{2,3}})?\s*/\s*(?:hr|h|hour)s?\b", re.I),
-    re.compile(rf"\$({_NUM})\s*(?:per|an?)\s+(?:hr|h|hour)s?\b", re.I),
-    re.compile(rf"\$({_NUM})\s*hourly\b", re.I),
-    # "28-35$/hr" — $ after number
-    re.compile(rf"({_NUM})\s*\$\s*/\s*(?:hr|h|hour)s?\b", re.I),
-    # "Hourly Rate/Salary: 20.29 - 24.11" / "Pay Range: $21.73-$26.65"
-    re.compile(rf"hourly\s+(?:rate|wage|pay)[^$\d]{{0,30}}\$?({_NUM})(?:{_SEP})\$?({_NUM})", re.I),
-    re.compile(rf"hourly\s+(?:rate|wage|pay)[^$\d]{{0,30}}\$?({_NUM})", re.I),
-    re.compile(rf"pay\s+range[^$\d]{{0,10}}\$?({_NUM})(?:{_SEP})\$?({_NUM})", re.I),
-    re.compile(rf"pay\s+range[^$\d]{{0,10}}\$?({_NUM})", re.I),
-    # "The hourly wage...is $26.49"  (multi-line ok)
-    re.compile(rf"hourly.{{0,120}}\$({_NUM})", re.I | re.S),
-    # "Pay rate $20.60"
-    re.compile(rf"pay\s+rate[^$\d]{{0,10}}\$?({_NUM})", re.I),
-    # "Rate: $19 - $24"
-    re.compile(rf"\brate[:\s]+\$({_NUM})(?:{_SEP})\$?({_NUM})", re.I),
-    re.compile(rf"\brate[:\s]+\$({_NUM})", re.I),
-    # "Salary range: $22 - $28 per hour"
-    re.compile(rf"salary\s+(?:range|scale)[^$\d]{{0,20}}\$({_NUM})(?:{_SEP})\$?({_NUM})\s*{_PER_H}", re.I),
-    re.compile(rf"salary\s+(?:range|scale)[^$\d]{{0,20}}\$({_NUM})\s*{_PER_H}", re.I),
-    # "Bachelor $22/h, Master $28/h"
-    re.compile(rf"\$({_NUM})\s*/\s*h\b", re.I),
-]
-_WEEKLY_RE = [
-    re.compile(rf"\$({_NUM})(?:{_SEP})\$?({_NUM})\s*{_PER_W}", re.I),
-    re.compile(rf"\$({_NUM})\s*{_PER_W}", re.I),
-    re.compile(rf"({_NUM})\s*/\s*week\b", re.I),
-    re.compile(rf"({_NUM})(?:{_SEP})({_NUM})\s*{_PER_W}", re.I),
-    re.compile(rf"\$({_NUM})(?:{_SEP})\$?({_NUM})\s*/\s*weekly\b", re.I),
-    re.compile(rf"\$({_NUM})\s*/\s*weekly\b", re.I),
-]
-_BIWEEKLY_RE = [
-    re.compile(rf"\$({_NUM})(?:{_SEP})\$?({_NUM})\s*{_PER_BW}", re.I),
-    re.compile(rf"\$({_NUM})\s*{_PER_BW}", re.I),
-    re.compile(rf"{_PER_BW}[^$\d]{{0,20}}\$({_NUM})(?:{_SEP})\$?({_NUM})", re.I),
-    re.compile(rf"{_PER_BW}[^$\d]{{0,10}}\$?({_NUM})", re.I),
-    # "salary range: $2,045 - $2,523 / bi-weekly"
-    re.compile(rf"salary\s+range[^$\d]{{0,20}}\$({_NUM})(?:{_SEP})\$?({_NUM})\s*{_PER_BW}", re.I),
-]
-_MONTHLY_RE = [
-    re.compile(rf"\$({_NUM})(?:{_SEP})\$?({_NUM})\s*{_PER_M}", re.I),
-    re.compile(rf"\$({_NUM})\s*{_PER_M}", re.I),
-    re.compile(rf"({_NUM})\s*(?:CAD|USD)?\s*{_PER_M}", re.I),
-    re.compile(rf"({_NUM})(?:{_SEP})({_NUM})\s*{_PER_M}", re.I),
-    # "monthly salary range...is $4,264 to $5,200"
-    re.compile(rf"monthly.{{0,80}}\$({_NUM})(?:{_SEP})\$?({_NUM})", re.I | re.S),
-    re.compile(rf"monthly.{{0,80}}\$({_NUM})", re.I | re.S),
-    # "$4000/mo"
-    re.compile(rf"\$({_NUM})\s*/\s*mo\b", re.I),
-    # "Targeting $4000/mo CAD"
-    re.compile(rf"\$({_NUM})(?:{_SEP})\$?({_NUM})\s*/\s*mo\b", re.I),
-]
-_ANNUAL_RE = [
-    # explicit annual with (per year) suffix like "(per year)"
-    re.compile(rf"\$({_NUM})(?:{_SEP})\$?({_NUM})\s*\(?{_PER_Y}\)?", re.I),
-    re.compile(rf"\$({_NUM})\s*\(?{_PER_Y}\)?", re.I),
-    re.compile(rf"({_NUM})(?:{_SEP})({_NUM})\s*{_PER_Y}", re.I),
-    re.compile(rf"({_NUM})\s*{_PER_Y}", re.I),
-    # "annual base salary range...is $X - $Y"
-    re.compile(rf"annual.{{0,60}}\$({_NUM})(?:{_SEP})\$?({_NUM})", re.I | re.S),
-    re.compile(rf"annual.{{0,60}}\$({_NUM})", re.I | re.S),
-    # "Projected Minimum Salary per year\n57,886.40"
-    re.compile(rf"minimum\s+salary\s+per\s+year\D{{0,5}}({_NUM})", re.I | re.S),
-    # "Salary Range$X to $Y CAD per year" (no space before $)
-    re.compile(rf"salary\s+range\$({_NUM})(?:{_SEP})\$?({_NUM})\s*(?:[A-Z]{{2,3}}\s*)?{_PER_Y}", re.I),
-    # biweekly salary lines like "Annual salary: $2,257 - 2,658 biweekly"
-    re.compile(rf"annual\s+salary[^$\d]{{0,20}}\$?({_NUM})(?:{_SEP})\$?({_NUM})\s*{_PER_BW}", re.I),
-]
-
-
-def _n(s: str) -> float:
-    return float(s.replace(",", ""))
-
-
-def _mid(a: str, b: str | None = None) -> float:
-    return (_n(a) + _n(b)) / 2 if b else _n(a)
-
-
-def _first(patterns: list[re.Pattern], text: str) -> float | None:
-    for p in patterns:
-        m = p.search(text)
-        if m:
-            groups = [g for g in m.groups() if g and re.match(r"[\d,]", g)]
-            if not groups:
-                continue
-            try:
-                if len(groups) >= 2:
-                    return _mid(groups[0], groups[1])
-                return _mid(groups[0])
-            except ValueError:
-                continue
-    return None
-
-
-# Co-op full-time hours: 37.5–40 hrs/week. Use 40 for conversions.
-_HRS_WEEK = 40.0
-
-
 def extract_comp_hourly(raw_json: str) -> float | None:
-    """Return estimated hourly CAD rate from raw_fields_json, or None."""
-    try:
-        d = json.loads(raw_json)
-    except Exception:
-        return None
-
-    text = d.get("Compensation and Benefits") or ""
-    if not text or len(text) < 4:
-        return None
-
-    # Hardcoded currency conversion — HKD figures are not CAD
-    _HKD_TO_CAD = 0.175
-    is_hkd = text.upper().startswith("HKD") or " HKD" in text.upper()
-
-    tl = text.lower()
-
-    hourly = _extract_hourly_raw(text, tl)
-    if hourly is None:
-        return None
-    return hourly * _HKD_TO_CAD if is_hkd else hourly
-
-
-def _extract_hourly_raw(text: str, tl: str) -> float | None:
-    # Try hourly first — most common for co-op
-    v = _first(_HOURLY_RE, text)
-    if v and 10 <= v <= 300:
-        return v
-
-    # Bi-weekly (before weekly to avoid false matches on "bi-weekly" vs "week")
-    v = _first(_BIWEEKLY_RE, text)
-    if v and 500 <= v <= 20_000:
-        return v / (_HRS_WEEK * 2)
-
-    # Weekly
-    v = _first(_WEEKLY_RE, text)
-    if v and 300 <= v <= 10_000:
-        return v / _HRS_WEEK
-
-    # Monthly
-    v = _first(_MONTHLY_RE, text)
-    if v and 1_000 <= v <= 50_000:
-        return v / (_HRS_WEEK * 52 / 12)
-
-    # Annual
-    v = _first(_ANNUAL_RE, text)
-    if v and 10_000 <= v <= 500_000:
-        return v / (_HRS_WEEK * 52)
-
-    # Fallback: if "hourly" or "per hour" appears anywhere, grab the first $ amount
-    if re.search(r"\bhourly\b|per hour\b", tl):
-        m = re.search(rf"\$({_NUM})", text)
-        if m:
-            amt = _n(m.group(1))
-            if 10 <= amt <= 300:
-                return amt
-
-    # Fallback: bare "$X to $Y" or "$X-$Y" — treat as hourly if midpoint in [10,100]
-    m = re.search(rf"\$({_NUM})\s*[-–]\s*\$?({_NUM})", text)
-    if not m:
-        m = re.search(rf"\$({_NUM})\s+to\s+\$?({_NUM})", text)
-    if m:
-        try:
-            mid = _mid(m.group(1), m.group(2))
-            if 10 <= mid <= 100:
-                return mid
-        except ValueError:
-            pass
-
-    # Fallback: "Starting at $X.XX" where value looks hourly
-    m = re.search(rf"starting\s+at\s+\$({_NUM})", text, re.I)
-    if m:
-        try:
-            amt = _n(m.group(1))
-            if 10 <= amt <= 100:
-                return amt
-        except ValueError:
-            pass
-
-    return None
+    """Compatibility helper; ingest persists this CAD midpoint on each posting."""
+    return normalize_compensation(raw_json)["comp_hourly_cad_mid"]
 
 
 # Normalize $16–$60/hr → 0–1; anything outside is clamped.
@@ -512,7 +336,16 @@ def get_postings() -> list[dict]:
         raw = row.pop("raw_fields_json") or ""
         row["responsibilities"] = clean_posting_text(row.get("responsibilities"))
         row["required_skills"] = clean_posting_text(row.get("required_skills"))
-        hourly = extract_comp_hourly(raw)
+        # Legacy databases get an in-memory fallback until the next ingest backfills
+        # the persisted compensation columns.
+        if row.get("comp_parser_version") != COMPENSATION_VERSION:
+            row.update(normalize_compensation(raw))
+        tiers_json = row.pop("comp_tiers_json", None)
+        try:
+            row["comp_tiers"] = json.loads(tiers_json) if tiers_json else []
+        except (TypeError, json.JSONDecodeError):
+            row["comp_tiers"] = []
+        hourly = row.get("comp_hourly_cad_mid")
         row["comp_hourly"] = round(hourly, 2) if hourly is not None else None
         row["comp_score"] = round(comp_score(hourly), 3) if hourly is not None else None
         row.update(extract_apply_info(raw))

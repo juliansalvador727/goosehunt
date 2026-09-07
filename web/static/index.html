@@ -680,7 +680,7 @@
       }
       table {
         width: 100%;
-        min-width: 1080px; /* title keeps room; #tbl-scroll scrolls sideways when narrower */
+        min-width: 1150px; /* title keeps room; #tbl-scroll scrolls sideways when narrower */
         border-collapse: collapse;
         table-layout: fixed;
       }
@@ -772,6 +772,15 @@
         font-family: var(--mono);
         font-size: 12px;
         font-weight: 500;
+      }
+      .pc {
+        padding-left: 4px;
+        padding-right: 4px;
+      }
+      td.pc {
+        /* pay is the widest cell text (up to CA$22.9k–31.0k/term); tighten so it fits whole */
+        font-size: 11.5px;
+        letter-spacing: -0.2px;
       }
       .term-yes {
         color: var(--green);
@@ -1342,9 +1351,9 @@
         </template>
 
         <details class="fg" open>
-          <summary><span>Pay</span><span class="fg-active" x-text="fMinPay ? '≥ $'+fMinPay : ''"></span></summary>
+          <summary><span>Pay</span><span class="fg-active" x-text="fMinPay ? '≥ CA$'+fMinPay : ''"></span></summary>
           <div class="fg-body">
-            <label class="num-row">Min $/hr
+            <label class="num-row">Min CA$/hr
               <input type="number" inputmode="decimal" min="0" step="1" placeholder="any" x-model.number="fMinPay" @input="applyFilters()" />
             </label>
             <label class="opt" :class="{on: fPayUnlisted}">
@@ -1467,7 +1476,7 @@
               <template x-for="r in visibleRoles" :key="r">
                 <col style="width: 66px" />
               </template>
-              <col style="width: 66px" />
+              <col style="width: 136px" />
               <col style="width: 72px" />
               <template x-if="board === 'full_cycle'">
                 <col style="width: 72px" />
@@ -1487,7 +1496,7 @@
                     <i class="sa" :class="{on:sortCol==='score_'+r}" x-text="arr('score_'+r)"></i>
                   </th>
                 </template>
-                <th class="c" @click="srt('comp_score')" :class="{sk:sortCol==='comp_score'}">Pay <i class="sa" :class="{on:sortCol==='comp_score'}" x-text="arr('comp_score')"></i></th>
+                <th class="c pc" @click="srt('comp_hourly')" :class="{sk:sortCol==='comp_hourly'}">Pay <i class="sa" :class="{on:sortCol==='comp_hourly'}" x-text="arr('comp_hourly')"></i></th>
                 <th class="c" @click="srt('openings')" :class="{sk:sortCol==='openings'}" title="Number of openings">Open <i class="sa" :class="{on:sortCol==='openings'}" x-text="arr('openings')"></i></th>
                 <template x-if="board === 'full_cycle'">
                   <th class="c" @click="srt('apps_count')" :class="{sk:sortCol==='apps_count'}" title="Applicants so far">Apps <i class="sa" :class="{on:sortCol==='apps_count'}" x-text="arr('apps_count')"></i></th>
@@ -1511,7 +1520,7 @@
                   <template x-for="r in visibleRoles" :key="r">
                     <td class="sc" :style="scStyle(p['score_'+r])" x-text="fmtS(p['score_'+r])"></td>
                   </template>
-                  <td class="sc" :style="scStyle(p.comp_score)" :title="p.comp_hourly != null ? 'est. $'+p.comp_hourly.toFixed(2)+'/hr' : 'pay not listed'" x-text="fmtPay(p.comp_hourly)"></td>
+                  <td class="sc pc" :style="scStyle(p.comp_score)" :title="payTip(p)" x-text="fmtPay(p)"></td>
                   <td class="sc" style="color: var(--tx2)" x-text="p.openings ?? '—'"></td>
                   <template x-if="board === 'full_cycle'">
                     <td class="sc" style="color: var(--tx2)" :title="p.apps_count != null ? p.apps_count + ' applicants' : ''" x-text="p.apps_count ?? '—'"></td>
@@ -1918,7 +1927,7 @@
               }
             }
             const add = (id, label, remove) => out.push({ id, label, remove });
-            if (this.fMinPay) add("pay", `Pay ≥ $${this.fMinPay}/hr`, () => (this.fMinPay = null));
+            if (this.fMinPay) add("pay", `Pay ≥ CA$${this.fMinPay}/hr`, () => (this.fMinPay = null));
             if (this.fMinPay && !this.fPayUnlisted) add("payun", "Pay listed only", () => (this.fPayUnlisted = true));
             if (this.fHasHistory) add("hist", "Has hired from Waterloo", () => (this.fHasHistory = false));
             if (this.fCover === "yes") add("cover", "Cover letter required", () => (this.fCover = "any"));
@@ -2286,10 +2295,12 @@
               let av = a[col], bv = b[col];
               if (typeof av === "string") av = av.toLowerCase();
               if (typeof bv === "string") bv = bv.toLowerCase();
-              if (av == null && bv == null) return 0;
+              const tie = () => (a.title || "").localeCompare(b.title || "") || String(a.job_id).localeCompare(String(b.job_id));
+              if (av == null && bv == null) return tie();
               if (av == null) return 1;
               if (bv == null) return -1;
-              return (av < bv ? -1 : av > bv ? 1 : 0) * dir;
+              const primary = (av < bv ? -1 : av > bv ? 1 : 0) * dir;
+              return primary || tie();
             });
             if (this.selId) this.selIdx = this.filtered.findIndex((p) => p.job_id === this.selId);
           },
@@ -2301,7 +2312,7 @@
           sortLabel() {
             const m = {
               score_resume: "resume match",
-              comp_score: "pay",
+              comp_hourly: "pay",
               deadline_iso: "due date",
               title: "title",
               location: "location",
@@ -2385,7 +2396,7 @@
             }
             if (e.key === "P") {
               e.preventDefault();
-              this.srt("comp_score");
+              this.srt("comp_hourly");
             }
             if (e.key === "f") {
               e.preventDefault();
@@ -2421,7 +2432,7 @@
               this.applyFilters();
             };
             const sorts = [
-              ["score_resume", "resume match"], ["comp_score", "pay"], ["deadline_iso", "due date"],
+              ["score_resume", "resume match"], ["comp_hourly", "pay"], ["deadline_iso", "due date"],
               ["term_rank", "hired at my term"], ["hires_total", "previous hires"], ["rating_avg", "employer rating"],
               ["apps_count", "applicants"], ["openings", "openings"],
               ["score_software", "software score"], ["score_ai_ml", "AI/ML score"],
@@ -2451,7 +2462,7 @@
               { id: "kj", cat: "keys", label: "j / k — next / previous posting", fn: () => this._nav(1) },
               { id: "ks", cat: "keys", label: "/ — focus search", fn: () => this.$refs.srch.focus() },
               { id: "kS", cat: "keys", label: "Shift+S — sort by resume match", fn: () => this.srt("score_resume") },
-              { id: "kP", cat: "keys", label: "Shift+P — sort by pay", fn: () => this.srt("comp_score") },
+              { id: "kP", cat: "keys", label: "Shift+P — sort by pay", fn: () => this.srt("comp_hourly") },
             );
             this.palAll = items;
             this.palItems = [...items];
@@ -2488,8 +2499,29 @@
           fmtS(val) {
             return val == null ? "—" : val.toFixed(2);
           },
-          fmtPay(h) {
-            return h == null ? "—" : "$" + h.toFixed(0) + "/h";
+          fmtPay(p) {
+            if (p.comp_native_min == null || !p.comp_currency || !p.comp_period) return "—";
+            const symbol = { CAD: "CA$", USD: "US$", EUR: "€", GBP: "£", CNY: "CN¥", TWD: "NT$", INR: "₹", HKD: "HK$", SGD: "S$", TRY: "₺" }[p.comp_currency] || (p.comp_currency + " ");
+            const compact = (value) => {
+              if (value >= 1000 && ["year", "term"].includes(p.comp_period)) return (value / 1000).toFixed(value % 1000 ? 1 : 0) + "k";
+              return value.toLocaleString("en-CA", { maximumFractionDigits: value < 100 ? 2 : 0 });
+            };
+            const range = p.comp_native_min === p.comp_native_max
+              ? compact(p.comp_native_min)
+              : compact(p.comp_native_min) + "–" + compact(p.comp_native_max);
+            const suffix = { hour: "/h", day: "/day", week: "/wk", biweekly: "/2wk", month: "/mo", year: "/yr", term: "/term" }[p.comp_period] || "";
+            return symbol + range + suffix;
+          },
+          payTip(p) {
+            if (p.comp_hourly == null) {
+              const state = { reference_only: "Pay refers to an external scale", not_disclosed: "Pay not disclosed", unparsed: "Pay needs review" }[p.comp_parse_status] || "Pay not listed";
+              return p.comp_raw_text ? state + ": " + p.comp_raw_text : state;
+            }
+            let tip = this.fmtPay(p);
+            if (p.comp_period !== "hour" || p.comp_currency !== "CAD") tip += ` · ≈ CA$${p.comp_hourly.toFixed(2)}/h for sorting`;
+            if (p.comp_fx_date) tip += ` · FX ${p.comp_fx_date}`;
+            if (p.comp_confidence) tip += ` · ${p.comp_confidence} confidence`;
+            return tip;
           },
           fmtDue(iso) {
             if (!iso) return "—";
@@ -2534,7 +2566,7 @@
           facts(p) {
             const out = [
               { k: "Due", v: this.fmtDueFull(p.deadline_iso), cls: this.isUrgent(p.deadline_iso) ? "urg" : "" },
-              { k: "Pay", v: p.comp_hourly != null ? `$${p.comp_hourly.toFixed(2)}/hr est.` : "not listed" },
+              { k: "Pay", v: p.comp_hourly != null ? this.fmtPay(p) : ({ reference_only: "external pay scale", unparsed: "needs review" }[p.comp_parse_status] || "not disclosed") },
               { k: "Location", v: [p.location, p.region].filter(Boolean).join(", ") || "—" },
               { k: "Country", v: p.country || "—" },
               { k: "Arrangement", v: p.arrangement || "—" },

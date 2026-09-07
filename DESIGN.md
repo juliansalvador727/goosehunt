@@ -110,7 +110,8 @@ Zero infrastructure. The entire corpus of WW postings for one term is small (hun
 ### Schema decisions
 
 - `job_id TEXT PRIMARY KEY` — WW job IDs are numeric strings; TEXT avoids leading-zero issues.
-- `raw_fields_json TEXT` — preserves the full label→value dict from the posting HTML plus the `_links` and `_ratings` reserved keys. Used at API request time to extract compensation, application method, apply contact info, duration, arrangement, level, location, documents, and the hiring-history summary without re-scraping. Because ratings live inside this JSON, a ratings change alone is enough for ingest to mark the row "updated".
+- `raw_fields_json TEXT` — preserves the full label→value dict from the posting HTML plus the `_links` and `_ratings` reserved keys. Used to extract application method, apply contact info, duration, arrangement, level, location, documents, and the hiring-history summary without re-scraping. Because ratings live inside this JSON, a ratings change alone is enough for ingest to mark the row "updated".
+- `comp_*` — persisted compensation interpretation: original pay text, native min/max/currency/period, stated hours, native and CAD hourly bounds/midpoint, FX provenance, parse status/confidence, and conditional-tier JSON. Ingest owns normalization so API requests do not reinterpret unchanged prose.
 - `deadline` vs `deadline_iso` — raw deadline comes from the scraper with whitespace garbage (`"Jun 2, 2026\n\t\t\t\t\t\n\t\t\t\t\t\t11:00 PM"`). Keep the raw string for display fidelity; populate `deadline_iso` during ingest via `dateutil.parser` for sorting and filtering.
 - `embedding BLOB` — `np.float32` array of shape (384,) serialized via `.tobytes()`. Decoded on read with `np.frombuffer(blob, dtype=np.float32)`.
 - `score_*` columns are REAL, nullable — scores are populated by the scorer after ingestion, so freshly scraped rows have NULL scores until `make embed` and `make score` run.
@@ -254,8 +255,17 @@ The full corpus fits in one JSON response (a few MB at most, embeddings excluded
     "score_firmware": 0.85,
     "score_hardware": 0.10,
     "score_resume": 0.43,
-    "comp_hourly": 26.49,
-    "comp_score": 0.238,
+    "comp_native_min": 24.00,
+    "comp_native_max": 28.00,
+    "comp_currency": "CAD",
+    "comp_period": "hour",
+    "comp_hourly_cad_min": 24.00,
+    "comp_hourly_cad_max": 28.00,
+    "comp_hourly_cad_mid": 26.00,
+    "comp_parse_status": "conditional",
+    "comp_confidence": "medium",
+    "comp_hourly": 26.00,
+    "comp_score": 0.227,
     "apply_method": "email",
     "apply_email": "careers@example.com",
     "apply_link": null,
@@ -287,22 +297,22 @@ The full corpus fits in one JSON response (a few MB at most, embeddings excluded
 ]
 ```
 
-`embedding` and `raw_fields_json` are never sent to the client. Everything from `comp_hourly` down is computed at request time from the DB row.
+`embedding` and `raw_fields_json` are never sent to the client. Compensation normalization is persisted at ingest; the other enrichments below are computed at request time from the DB row.
 
-### Request-time enrichment (web/main.py)
+### Enrichment
 
-Five enrichment passes run over each row before it's returned:
+Compensation is normalized during ingest; four additional enrichment passes run over each row before it is returned:
 
-**Compensation parsing** — parses the free-text `Compensation and Benefits` field from `raw_fields_json` using a prioritized regex pipeline:
+**Compensation parsing** — ingest parses the free-text `Compensation and Benefits` field into auditable `comp_*` columns:
 
 1. Hourly (most common): `$25–$29 hourly`, `$27/hr`, `Hourly Rate: 20.29–24.11`, `The hourly wage…is $26.49`
 2. Bi-weekly: `$2,045 – $2,523 / bi-weekly` → ÷ 80 hrs
 3. Weekly: `$1,600 per week` → ÷ 40 hrs
 4. Monthly: `$4,264 to $5,200 per month` → ÷ 173.3 hrs
 5. Annual: `$45,000 – $55,000 per year` → ÷ 2,080 hrs
-6. Fallback: bare `$X – $Y` where midpoint is in [10, 100] → treated as hourly
+6. Term totals, `K` suffixes, tiered schedules, currency placement variants, and low-confidence unit inference
 
-Result is `comp_hourly` (est. $/hr). `comp_score` normalizes to [0, 1]: $16/hr → 0.0, $60/hr → 1.0.
+Native min/max and currency remain the primary display. Weekly/monthly/annual/term values are converted using stated hours when available. Cross-currency sorting uses the dated Bank of Canada snapshot in `config/fx_rates.json`; the rate and date are persisted beside each interpretation. `comp_hourly` is the CAD midpoint used for filtering and sorting. `comp_score` clamps $16–$60/hr to [0, 1] only for colour intensity.
 
 **Application method detection** — on the Full Cycle board the only application labels are `Application Method` (always `WaterlooWorks`) and `Additional Application Information`, so links come from the scraper's `_links` anchors on those labels plus a URL regex over the additional-info text. Anchors there are often team LinkedIn profiles or UW visa pages rather than an application form, so URLs on `linkedin.com/in/`, `uwaterloo.ca`, and `google.com` are dropped. The older `Application Delivery` / `If By Email, Send To` / `If By Website, Go To` labels are still honoured for boards that have them.
 
@@ -339,7 +349,7 @@ Three regions: a resizable filter sidebar on the left, the job list, and a detai
 
 **Filter sidebar:** every group is a collapsible `<details>` with option counts for the current board. Checkbox groups come from one `groups` registry in `app()` that also drives the palette's toggle entries, the active-filter chips, and "Clear all", so a filter is declared once. One rule for every group: nothing checked means the group is not filtering; checked options are OR'd. Groups: Status (with a separate "Hide ignored postings" switch, on by default), Role, Apply by, Hired my term before (yes / hires but not my term / no history), Duration, Level, Arrangement, Country, Region (the last two derived from the data). "My work term" (segmented 1–8) sits at the top because it drives the T‹n› column and the term group. Other controls: min pay with "include unlisted", has hiring history, cover letter any / not required / required, max applicants (Full Cycle), min openings, due within N days, hide expired. Everything currently applied is repeated as removable chips in a row above the table, and an active group's heading turns blue.
 
-**Table:** Title with org underneath · Location · Due · Resume · role scores · Pay · Open · Apps (Full Cycle only) · T‹n› · Status. Fixed column widths, title takes the remaining space, and the table scrolls sideways below about 1040px. When the Role filter is active only the checked roles' score columns are shown. T‹n› is a tri-state: ✓ the employer's hiring history shows hires at your work term number, ✗ it has a history without any, – no history (the tooltip has the full breakdown). Any header sorts; palette sorts also cover fields not shown as columns (previous hires, rating, similarity).
+**Table:** Title with org underneath · Location · Due · Resume · role scores · Pay · Open · Apps (Full Cycle only) · T‹n› · Status. Pay displays the native range/period and sorts by its unbounded CAD hourly midpoint; unknown pay remains last and ties use title/job ID. Fixed column widths, title takes the remaining space, and the table scrolls sideways below about 1040px. When the Role filter is active only the checked roles' score columns are shown. T‹n› is a tri-state: ✓ the employer's hiring history shows hires at your work term number, ✗ it has a history without any, – no history (the tooltip has the full breakdown). Any header sorts; palette sorts also cover fields not shown as columns (previous hires, rating, similarity).
 
 **Drawer:** sticky header with title, org, status buttons, and close. Then a facts grid (due, pay, location, country, arrangement, duration, level, openings, applicants, hired at my term, employer rating), the apply box (email with copy, every application link, or the WaterlooWorks fallback, plus required documents with the cover letter highlighted), a scores strip (resume, four roles, similarity when in semantic mode), matched keywords, then Summary / Responsibilities / Required skills as collapsible sections. WaterlooWorks emits list items as tab-indented lines; `renderPostingText()` turns those (and pasted bullet glyphs) into real paragraphs and nested lists, building DOM nodes only so no posting text is ever parsed as HTML. Hiring history follows (previous hires, satisfaction, a by-term bar strip with your term highlighted, faculties, top programs), then term-date notes and the job ID.
 

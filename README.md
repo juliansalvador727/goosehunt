@@ -163,9 +163,11 @@ A Day/Night toggle persists the theme in `localStorage`.
 | `score_firmware` | Firmware / embedded / mechatronics keyword match |
 | `score_hardware` | Hardware / FPGA / PCB keyword match           |
 | `score_resume`   | Cosine similarity between posting and your resume |
-| `comp_score`     | Estimated hourly pay, normalized to [0, 1] ($16/hr → 0.0, $60/hr → 1.0) |
+| `comp_score`     | CAD-normalized hourly pay mapped to [0, 1] for table colouring only |
 
-All scores are in [0, 1]. Keywords are tunable — edit `config/roles.yaml` and rerun `make score`.
+Pay sorting uses the unbounded CAD hourly midpoint, not `comp_score`, so rates above the colour scale remain correctly ordered. Native min/max, currency and pay period are persisted during ingest; foreign pay uses the dated Bank of Canada snapshot in `config/fx_rates.json` for cross-currency sorting while remaining displayed in its native currency.
+
+All displayed relevance scores are in [0, 1]. Keywords are tunable — edit `config/roles.yaml` and rerun `make score`.
 
 ---
 
