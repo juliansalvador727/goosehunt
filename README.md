@@ -41,12 +41,21 @@ cp /path/to/resume.pdf resume.pdf
 
 ## First run
 
+Put your WaterlooWorks credentials in the git-ignored `.env` file:
+
+```dotenv
+WATERLOOWORKS_EMAIL=your_username@uwaterloo.ca
+WATERLOOWORKS_PASSWORD=your_password
+```
+
 ```bash
 make run                  # Employer Direct (default)
 make run BOARD=full_cycle # Full Cycle Service
 ```
 
-This opens a Chromium window. Log in to WaterlooWorks (Duo if prompted), navigate to the board you chose, set your work term and filters, wait for job listings to appear, then press Enter in the terminal. The scraper runs, the pipeline processes everything, and the UI starts at `http://localhost:8000`.
+This opens a Chromium window, fills the UWaterloo ADFS login form from `.env`, and submits it. Complete Duo if prompted. The scraper detects the authenticated dashboard automatically, opens the board selected by `BOARD`, clicks **ALL JOBS**, and runs five concurrent workers against that one authenticated page. No extra tabs or terminal handoff are needed. The pipeline then processes everything, and the UI starts at `http://localhost:8000`.
+
+Credentials are only filled when the browser is on the exact `adfs.uwaterloo.ca` host. The `.env` file is ignored by Git; do not commit it or share it. If either value is absent, the scraper falls back to manual browser login.
 
 On subsequent runs where you just want to re-serve existing data:
 
@@ -61,6 +70,11 @@ make scrape BOARD=full_cycle && make pipeline
 ```
 
 The scraper also pulls each employer's Work Term Ratings tab (previous Waterloo hires, by work term number and faculty). Add `ARGS=--no-ratings` to skip it, or `ARGS="--probe-ratings 10"` to dump the raw ratings JSON for ten jobs to `data/ratings_sample.json` without scraping.
+
+Set the detail-scraping concurrency with `ARGS="--workers N"`; the default is 5.
+Listing pagination remains sequential but has no fixed delay between pages.
+If the final listing page contains fewer than the configured page size, its jobs
+are processed by one worker after the full pages finish.
 
 ---
 
@@ -85,13 +99,14 @@ docker compose up
 ```
 make install     # create venv, install deps, install Chromium
 make run         # scrape + pipeline + serve (BOARD=direct by default)
-make scrape      # scrape only → data/postings.jsonl (BOARD=direct|full_cycle)
+make scrape      # scrape only with 3 workers → data/postings.jsonl
 make pipeline    # ingest → embed → score (run after scrape)
 make serve       # start FastAPI on localhost:8000
 make test        # run unit tests (no browser required)
 ```
 
 Set `BOARD=full_cycle` on `make run` or `make scrape` for the Full Cycle board.
+Set `ARGS="--workers 1"` to disable parallel detail scraping.
 
 Individual pipeline steps: `make ingest`, `make embed`, `make score`.
 

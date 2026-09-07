@@ -1,6 +1,9 @@
 # virtualenv
 .venv/
 
+# local credentials
+.env
+
 # persistent browser profile (contains session cookies / credentials)
 scraper/profile/
 
