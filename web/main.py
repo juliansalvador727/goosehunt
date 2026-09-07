@@ -17,6 +17,7 @@ from db.compensation import (
     COMPENSATION_VERSION,
     normalize_compensation,
 )
+from web.applied import parse_applied_job_ids
 
 DB_PATH = Path(__file__).parent.parent / "data" / "postings.db"
 STATIC_DIR = Path(__file__).parent / "static"
@@ -474,6 +475,71 @@ def update_posting_status(job_id: str, payload: dict) -> dict:
     if cur.rowcount == 0:
         raise HTTPException(status_code=404, detail="Posting not found.")
     return {"job_id": job_id, "status": status}
+
+
+# SQLite's default parameter limit is 999; applications pages are far smaller
+# than that, but chunk anyway so a multi-page paste can never overflow it.
+_ID_CHUNK = 400
+
+
+def _chunks(items: list[str], size: int = _ID_CHUNK):
+    for i in range(0, len(items), size):
+        yield items[i:i + size]
+
+
+@app.post("/api/postings/applied")
+def mark_applied(payload: dict) -> dict:
+    """Mark every posting named in a pasted WaterlooWorks applications page as applied.
+
+    Additive only: IDs missing from the paste keep whatever status they have.
+    """
+    job_ids = parse_applied_job_ids(payload.get("text") or "")
+    if not job_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="No job IDs found in that paste. Copy the whole Applications page and try again.",
+        )
+    if not DB_PATH.exists():
+        raise HTTPException(
+            status_code=503,
+            detail="Postings database not found. Run `make scrape && make pipeline` first.",
+        )
+
+    with sqlite3.connect(DB_PATH) as conn:
+        try:
+            ensure_postings_schema(conn)
+            known: dict[str, str] = {}
+            for chunk in _chunks(job_ids):
+                placeholders = ", ".join("?" * len(chunk))
+                known.update(
+                    conn.execute(
+                        f"SELECT job_id, status FROM postings WHERE job_id IN ({placeholders})",
+                        chunk,
+                    ).fetchall()
+                )
+            updated = [j for j in job_ids if known.get(j, "applied") != "applied"]
+            for chunk in _chunks(updated):
+                placeholders = ", ".join("?" * len(chunk))
+                conn.execute(
+                    f"UPDATE postings SET status = 'applied' WHERE job_id IN ({placeholders})",
+                    chunk,
+                )
+            conn.commit()
+        except sqlite3.OperationalError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Postings database is not initialized. Run `make ingest` or `make pipeline` first.",
+            ) from exc
+
+    matched = [j for j in job_ids if j in known]
+    return {
+        "parsed": len(job_ids),
+        "matched": len(matched),
+        "updated": len(updated),
+        "already_applied": len(matched) - len(updated),
+        "unknown": [j for j in job_ids if j not in known],
+        "applied_job_ids": matched,
+    }
 
 
 @app.delete("/api/postings/expired")

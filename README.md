@@ -137,6 +137,8 @@ Two-pane layout: sortable table on the left, posting detail panel on the right.
 
 **Detail panel:** score grid, apply link/email with copy buttons, keyword-hit chips showing which keywords fired per role, summary/responsibilities/required skills, and local status buttons (`New` / `Maybe` / `Applied` / `Ignored`).
 
+**Add applied — bulk-mark everything you've already applied to.** Marking 40+ postings one drawer at a time is tedious, so the topbar has an **Add applied** button. Open WaterlooWorks → `Postings / Applications` → `Applications`, select the whole page (`Ctrl+A`) and copy it (`Ctrl+C`), then paste it into the overlay and press **Mark as applied**. goosehunt reads only the job IDs out of the paste — everything else on the page is ignored — and flips those postings to `Applied`. It is additive and repeatable: postings not in the paste keep their status, and pasting the same page twice changes nothing. Paste one page at a time if your applications list is paginated. `Esc` closes the overlay.
+
 **Keyboard shortcuts:**
 
 | Key        | Action               |
@@ -229,6 +231,7 @@ goosehunt/
 │   └── parser.py           # pdfplumber PDF → plain text
 ├── web/
 │   ├── main.py             # FastAPI app
+│   ├── applied.py          # job IDs out of a pasted WW applications page
 │   └── static/
 │       └── index.html      # Alpine.js UI, no build step
 ├── scripts/
