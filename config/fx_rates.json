@@ -1,0 +1,17 @@
+{
+  "base": "CAD",
+  "date": "2026-09-04",
+  "source": "https://www.bankofcanada.ca/valet/observations/FXUSDCAD,FXEURCAD,FXCNYCAD,FXINRCAD,FXTWDCAD,FXHKDCAD,FXSGDCAD,FXGBPCAD,FXTRYCAD/json?start_date=2026-09-04&end_date=2026-09-04",
+  "rates_to_cad": {
+    "CAD": 1.0,
+    "USD": 1.384,
+    "EUR": 1.6075,
+    "CNY": 0.2062,
+    "INR": 0.01465,
+    "TWD": 0.04376,
+    "HKD": 0.1765,
+    "SGD": 1.0924,
+    "GBP": 1.8706,
+    "TRY": 0.0286
+  }
+}
