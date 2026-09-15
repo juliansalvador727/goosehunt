@@ -192,6 +192,25 @@ def extract_posting_attrs(raw_json: str) -> dict:
     }
 
 
+_TARGETED_DEGREE_RE = re.compile(r"^(?:- Theme - .+|[A-Z]+(?:/[A-Z]+)* - .+)$")
+
+
+def extract_targeted_degrees(raw_json: str) -> list[str]:
+    """Return the selectable WaterlooWorks targets from the noisy detail field."""
+    try:
+        data = json.loads(raw_json)
+    except Exception:
+        return []
+
+    raw_value = data.get("Targeted Degrees and Disciplines") or ""
+    targets: list[str] = []
+    for line in str(raw_value).splitlines():
+        value = re.sub(r"\s+", " ", line).strip()
+        if value and _TARGETED_DEGREE_RE.fullmatch(value) and value not in targets:
+            targets.append(value)
+    return targets
+
+
 _TAG_RE = re.compile(r"<[^>]+>")
 
 
@@ -351,6 +370,7 @@ def get_postings() -> list[dict]:
         row["comp_score"] = round(comp_score(hourly), 3) if hourly is not None else None
         row.update(extract_apply_info(raw))
         row.update(extract_posting_attrs(raw))
+        row["targeted_degrees"] = extract_targeted_degrees(raw)
         row.update(extract_ratings(raw))
         text = " ".join(filter(None, [
             row.get("title"), row.get("org"),
@@ -540,6 +560,31 @@ def mark_applied(payload: dict) -> dict:
         "unknown": [j for j in job_ids if j not in known],
         "applied_job_ids": matched,
     }
+
+
+@app.delete("/api/postings/applied")
+def clear_applied_statuses() -> dict:
+    """Reset every applied posting to new without deleting any postings."""
+    if not DB_PATH.exists():
+        raise HTTPException(
+            status_code=503,
+            detail="Postings database not found. Run `make scrape && make pipeline` first.",
+        )
+
+    with sqlite3.connect(DB_PATH) as conn:
+        try:
+            ensure_postings_schema(conn)
+            cur = conn.execute(
+                "UPDATE postings SET status = 'new' WHERE status = 'applied'"
+            )
+            conn.commit()
+        except sqlite3.OperationalError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Postings database is not initialized. Run `make ingest` or `make pipeline` first.",
+            ) from exc
+
+    return {"updated": cur.rowcount, "status": "new"}
 
 
 @app.delete("/api/postings/expired")

@@ -18,6 +18,7 @@ from web.main import (
     extract_apply_info,
     extract_posting_attrs,
     extract_ratings,
+    extract_targeted_degrees,
     parse_applied_job_ids,
     rank_embeddings,
 )
@@ -82,6 +83,44 @@ def test_special_dates():
         "Special Work Term Start/End Date Considerations": "January 4 to April 30, 2027",
     }))
     assert attrs["special_dates"] == "January 4 to April 30, 2027"
+
+
+# ── extract_targeted_degrees ─────────────────────────────────────────────────
+
+def test_targeted_degrees_extracts_themes_and_programs_from_noisy_field():
+    targets = extract_targeted_degrees(raw(**{
+        "Targeted Degrees and Disciplines": """
+            Targeted Clusters
+            View Targeted Degrees and Disciplines
+            - Theme - Computing: Software Development
+            ENG - Software Engineering
+            MATH - Computer Science
+        """,
+    }))
+    assert targets == [
+        "- Theme - Computing: Software Development",
+        "ENG - Software Engineering",
+        "MATH - Computer Science",
+    ]
+
+
+def test_targeted_degrees_dedupes_and_handles_combined_faculties():
+    targets = extract_targeted_degrees(raw(**{
+        "Targeted Degrees and Disciplines": """
+            ARTS/ENV/MATH/SCI - Chartered Professional Accounting
+            ENG - Systems Design
+            ENG - Systems Design
+        """,
+    }))
+    assert targets == [
+        "ARTS/ENV/MATH/SCI - Chartered Professional Accounting",
+        "ENG - Systems Design",
+    ]
+
+
+def test_targeted_degrees_handles_missing_or_invalid_json():
+    assert extract_targeted_degrees(raw()) == []
+    assert extract_targeted_degrees("not json") == []
 
 
 # ── extract_apply_info ────────────────────────────────────────────────────────
@@ -379,3 +418,26 @@ def test_mark_applied_rejects_paste_without_ids(tmp_path, monkeypatch):
     r = TestClient(app).post("/api/postings/applied", json={"text": "nothing useful"})
     assert r.status_code == 400
     assert "job id" in r.json()["detail"].lower()
+
+
+def test_clear_applied_statuses_endpoint(tmp_path, monkeypatch):
+    db = tmp_path / "p.db"
+    _applied_db(db, {"483949": "applied", "484037": "applied", "999999": "maybe"})
+    monkeypatch.setattr(main, "DB_PATH", db)
+
+    body = main.clear_applied_statuses()
+
+    assert body == {"updated": 2, "status": "new"}
+    with sqlite3.connect(db) as conn:
+        rows = dict(conn.execute("SELECT job_id, status FROM postings").fetchall())
+    assert rows == {"483949": "new", "484037": "new", "999999": "maybe"}
+
+
+def test_clear_applied_statuses_is_repeatable(tmp_path, monkeypatch):
+    db = tmp_path / "p.db"
+    _applied_db(db, {"483949": "new"})
+    monkeypatch.setattr(main, "DB_PATH", db)
+
+    body = main.clear_applied_statuses()
+
+    assert body["updated"] == 0

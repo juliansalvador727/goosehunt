@@ -571,6 +571,35 @@
         color: var(--tx2);
         margin: 6px 0 2px;
       }
+      .fg-actions {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        margin: 1px 0 5px;
+        font-size: 11px;
+        color: var(--tx3);
+      }
+      .fg-actions span {
+        margin-right: auto;
+      }
+      .fg-danger {
+        align-self: flex-start;
+        margin-top: 6px;
+        padding: 4px 7px;
+        border: 1px solid color-mix(in srgb, var(--red) 45%, var(--bd));
+        border-radius: 5px;
+        background: transparent;
+        color: var(--red);
+        cursor: pointer;
+        font-size: 11px;
+      }
+      .fg-danger:hover:not(:disabled) {
+        background: color-mix(in srgb, var(--red) 10%, transparent);
+      }
+      .fg-danger:disabled {
+        cursor: default;
+        opacity: 0.45;
+      }
       .opt {
         display: flex;
         align-items: center;
@@ -1513,6 +1542,13 @@
               <span class="fg-active" x-text="groupBadge(g.key)"></span>
             </summary>
             <div class="fg-body">
+              <template x-if="g.key === 'targeted'">
+                <div class="fg-actions">
+                  <span>Match any selected</span>
+                  <button class="link-btn" @click="setGroupAll(g.key, true)">All</button>
+                  <button class="link-btn muted" @click="setGroupAll(g.key, false)">None</button>
+                </div>
+              </template>
               <template x-if="g.key === 'status'">
                 <label class="opt" :class="{on: fHideIgnored}" style="margin-bottom: 4px">
                   <input type="checkbox" x-model="fHideIgnored" @change="applyFilters()" />
@@ -1528,6 +1564,14 @@
                   <span x-text="o.l"></span>
                   <span class="n" x-text="counts[g.key]?.[o.v] ?? 0"></span>
                 </label>
+              </template>
+              <template x-if="g.key === 'status'">
+                <button
+                  class="fg-danger"
+                  @click="removeAllApplied()"
+                  :disabled="resettingApplied || !allAppliedCount"
+                  x-text="resettingApplied ? 'Removing…' : 'Remove all Applied'"
+                ></button>
               </template>
             </div>
           </details>
@@ -2018,6 +2062,29 @@
               sel: {},
               match: (p, on) => on.some((r) => (p["score_" + r] ?? 0) > 0),
             },
+            targeted: {
+              label: "Targeted degrees",
+              closed: true,
+              opts: [
+                { v: "- Theme - Computing: Hardware Development", l: "- Theme - Computing: Hardware Development" },
+                { v: "- Theme - Computing: Information Systems and Data Management", l: "- Theme - Computing: Information Systems and Data Management" },
+                { v: "- Theme - Computing: Software Development", l: "- Theme - Computing: Software Development" },
+                { v: "- Theme - Computing: Systems Support", l: "- Theme - Computing: Systems Support" },
+                { v: "ENG - Management Sciences", l: "ENG - Management Sciences" },
+                { v: "ENG - Mechanical and Mechatronics Engineering", l: "ENG - Mechanical and Mechatronics Engineering" },
+                { v: "ENG - Software Engineering", l: "ENG - Software Engineering" },
+                { v: "ENG - Systems Design", l: "ENG - Systems Design" },
+                { v: "MATH - Applied Mathematics", l: "MATH - Applied Mathematics" },
+                { v: "MATH - Combinatorics and Optimization", l: "MATH - Combinatorics and Optimization" },
+                { v: "MATH - Computer Science", l: "MATH - Computer Science" },
+                { v: "MATH - Computing and Financial Management", l: "MATH - Computing and Financial Management" },
+                { v: "MATH - Pure Mathematics", l: "MATH - Pure Mathematics" },
+                { v: "MATH - Statistics and Actuarial Science", l: "MATH - Statistics and Actuarial Science" },
+                { v: "MATH - Teaching", l: "MATH - Teaching" },
+              ],
+              sel: {},
+              match: (p, on) => (p.targeted_degrees || []).some((target) => on.includes(target)),
+            },
             apply: {
               label: "Apply by",
               opts: [
@@ -2087,6 +2154,7 @@
           drawerW: 720,
           drag: null,
           deletingExpired: false,
+          resettingApplied: false,
           appliedOpen: false,
           appliedText: "",
           appliedResult: "",
@@ -2135,6 +2203,9 @@
           },
           get boardPostings() {
             return this.postings.filter((p) => p.board_type === this.board);
+          },
+          get allAppliedCount() {
+            return this.postings.filter((p) => p.status === "applied").length;
           },
           get jobCountLabel() {
             if (this.loading) return "loading…";
@@ -2250,6 +2321,33 @@
             } catch (err) {
               posting.status = previous;
               this.apiError = err?.message || "Could not update status.";
+            }
+          },
+          async removeAllApplied() {
+            if (this.resettingApplied) return;
+            const count = this.allAppliedCount;
+            if (!count) return;
+            if (!confirm(`Remove the Applied status from all ${count} applied job${count === 1 ? "" : "s"}? They will be reset to New.`)) return;
+            this.resettingApplied = true;
+            try {
+              const r = await fetch("/api/postings/applied", { method: "DELETE" });
+              if (!r.ok) {
+                let detail = "Could not remove Applied statuses.";
+                try {
+                  detail = (await r.json()).detail || detail;
+                } catch (_) {}
+                throw new Error(detail);
+              }
+              this.postings.forEach((p) => {
+                if (p.status === "applied") p.status = "new";
+              });
+              this.groups.status.sel.applied = false;
+              this.recount();
+              this.applyFilters();
+            } catch (err) {
+              this.apiError = err?.message || "Could not remove Applied statuses.";
+            } finally {
+              this.resettingApplied = false;
             }
           },
           setBoard(id) {
@@ -2384,6 +2482,12 @@
             const g = this.groups[key];
             const on = g.opts.filter((o) => g.sel[o.v]).length;
             return on ? `${on} selected` : "";
+          },
+          setGroupAll(key, selected) {
+            const g = this.groups[key];
+            if (!g) return;
+            g.opts.forEach((o) => (g.sel[o.v] = selected));
+            this.applyFilters();
           },
           clearFilters() {
             for (const g of Object.values(this.groups)) {

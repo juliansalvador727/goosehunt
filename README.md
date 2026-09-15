@@ -131,11 +131,11 @@ Two-pane layout: sortable table on the left, posting detail panel on the right.
 **Command palette (Ctrl+K) — keyboard-driven access to all sort and filter actions**
 ![Command palette](docs/ctrlk.png)
 
-**Filters:** search box, role chips (`SWE`, `AI/ML`, `FW`, `HW`), apply-by chips (`Email`, `Link`).
+**Filters:** search box, role chips (`SWE`, `AI/ML`, `FW`, `HW`), targeted WaterlooWorks degree/theme options, apply-by chips (`Email`, `Link`). The targeted-degree group supports individual toggles plus All/None controls.
 
 **Table columns:** title, org, location, deadline, resume score, role scores, pay, openings, status. All sortable. Click a job ID to copy it.
 
-**Detail panel:** score grid, apply link/email with copy buttons, keyword-hit chips showing which keywords fired per role, summary/responsibilities/required skills, and local status buttons (`New` / `Maybe` / `Applied` / `Ignored`).
+**Detail panel:** score grid, apply link/email with copy buttons, keyword-hit chips showing which keywords fired per role, summary/responsibilities/required skills, and local status buttons (`New` / `Maybe` / `Applied` / `Ignored`). The Status filter also has a confirmed bulk action to reset every `Applied` posting to `New`.
 
 **Add applied — bulk-mark everything you've already applied to.** Marking 40+ postings one drawer at a time is tedious, so the topbar has an **Add applied** button. Open WaterlooWorks → `Postings / Applications` → `Applications`, select the whole page (`Ctrl+A`) and copy it (`Ctrl+C`), then paste it into the overlay and press **Mark as applied**. goosehunt reads only the job IDs out of the paste — everything else on the page is ignored — and flips those postings to `Applied`. It is additive and repeatable: postings not in the paste keep their status, and pasting the same page twice changes nothing. Paste one page at a time if your applications list is paginated. `Esc` closes the overlay.
 
